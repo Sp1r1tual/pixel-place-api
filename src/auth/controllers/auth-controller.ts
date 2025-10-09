@@ -7,7 +7,7 @@ import { AuthService } from "../services/auth-service.js";
 const authService = new AuthService();
 
 class AuthController {
-  private setRefreshTokenCookie(res: Response, token: string): void {
+  private setRefreshTokenCookie = (res: Response, token: string): void => {
     res.cookie("refreshToken", token, {
       httpOnly: true,
       secure: true,
@@ -15,9 +15,9 @@ class AuthController {
       path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
-  }
+  };
 
-  async login(req: Request, res: Response, next: NextFunction) {
+  login = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body as IAuthPayload;
       const userData = await authService.login({ email, password });
@@ -28,9 +28,9 @@ class AuthController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async logout(req: Request, res: Response, next: NextFunction) {
+  logout = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { refreshToken } = req.cookies as { refreshToken?: string };
       if (!refreshToken) {
@@ -44,9 +44,9 @@ class AuthController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async registration(req: Request, res: Response, next: NextFunction) {
+  registration = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body as IAuthPayload;
       const userData = await authService.registration({ email, password });
@@ -57,9 +57,9 @@ class AuthController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async refresh(req: Request, res: Response, next: NextFunction) {
+  refresh = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { refreshToken } = req.cookies;
       const userData = await authService.refresh(refreshToken);
@@ -70,7 +70,7 @@ class AuthController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 }
 
 export { AuthController };
