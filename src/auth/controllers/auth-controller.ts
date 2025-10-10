@@ -4,6 +4,9 @@ import { IAuthPayload } from "../../types/auth.js";
 
 import { AuthService } from "../services/auth-service.js";
 
+import { activationSuccessHTML } from "../views/activation-success.js";
+import { activationErrorHTML } from "../views/activation-fail.js";
+
 const authService = new AuthService();
 
 class AuthController {
@@ -55,6 +58,25 @@ class AuthController {
 
       return res.json(userData);
     } catch (error) {
+      next(error);
+    }
+  };
+
+  activate = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authService.activate(req.params.link);
+
+      res
+        .type("html")
+        .send(activationSuccessHTML(`${process.env.CLIENT_URL}/login`));
+    } catch (error) {
+      const errMsg =
+        error instanceof Error ? error.message : "Activation failed";
+
+      res
+        .status(400)
+        .type("html")
+        .send(activationErrorHTML(`${process.env.CLIENT_URL}/login`, errMsg));
       next(error);
     }
   };

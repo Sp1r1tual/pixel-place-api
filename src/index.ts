@@ -25,9 +25,10 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
-app.use(errorMiddleware);
 
 router(app);
+
+app.use(errorMiddleware);
 
 const start = async () => {
   try {
