@@ -13,7 +13,7 @@ class AuthController {
   private setRefreshTokenCookie = (res: Response, token: string): void => {
     res.cookie("refreshToken", token, {
       httpOnly: true,
-      secure: true,
+      secure: false,
       sameSite: "none",
       path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000,
@@ -91,6 +91,31 @@ class AuthController {
       return res.json(userData);
     } catch (error) {
       next(error);
+    }
+  };
+
+  forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email } = req.body;
+
+      await authService.forgotPassword(email);
+
+      return res.json();
+    } catch (error) {
+      return next(error);
+    }
+  };
+
+  resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { password } = req.body;
+      const { token } = req.params;
+
+      await authService.resetPassword(token, password);
+
+      return res.json();
+    } catch (error) {
+      return next(error);
     }
   };
 }

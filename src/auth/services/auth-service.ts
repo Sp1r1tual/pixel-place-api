@@ -57,6 +57,92 @@ class AuthService {
     if (insertError) throw insertError;
   }
 
+  public validateAccessToken(
+    token: string,
+  ): { id: string; email: string } | null {
+    const secret = process.env.JWT_ACCESS_SECRET;
+    if (!secret) throw new Error("JWT_ACCESS_SECRET not set");
+
+    try {
+      const userData = jwt.verify(token, secret) as {
+        id: string;
+        email: string;
+      };
+      return userData;
+    } catch {
+      return null;
+    }
+  }
+
+  private generateResetToken(payload: object): string {
+    const resetSecret = process.env.JWT_RESET_SECRET;
+
+    if (!resetSecret) {
+      throw new Error("JWT_RESET_SECRET not defined in environment variables");
+    }
+
+    const resetToken = jwt.sign(payload, resetSecret, {
+      expiresIn: "15m",
+    });
+
+    return resetToken;
+  }
+
+  private async saveResetToken(
+    userId: string,
+    resetToken: string,
+  ): Promise<void> {
+    const { error } = await supabase.from("reset_tokens").insert({
+      user_id: userId,
+      reset_token: resetToken,
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) throw error;
+  }
+
+  private async validateResetToken(resetToken: string): Promise<{
+    id: string;
+    email: string;
+  } | null> {
+    const resetSecret = process.env.JWT_RESET_SECRET;
+
+    if (!resetSecret) {
+      throw new Error("JWT_RESET_SECRET not defined in environment variables");
+    }
+
+    try {
+      const userData = jwt.verify(resetToken, resetSecret) as {
+        id: string;
+        email: string;
+      };
+      return userData;
+    } catch {
+      return null;
+    }
+  }
+
+  private async findResetToken(resetToken: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from("reset_tokens")
+      .select("*")
+      .eq("reset_token", resetToken)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") throw error;
+
+    return !!data;
+  }
+
+  private async removeResetToken(resetToken: string): Promise<void> {
+    const { error } = await supabase
+      .from("reset_tokens")
+      .delete()
+      .eq("reset_token", resetToken);
+
+    if (error) throw error;
+  }
+
   public async login({ email, password }: IAuthPayload) {
     const { data: user, error } = await supabase
       .from("users")
@@ -188,6 +274,79 @@ class AuthService {
     } catch {
       throw ApiError.UnauthorizedError("Token verification failed");
     }
+  }
+
+  public async forgotPassword(email: string): Promise<void> {
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id, email")
+      .eq("email", email)
+      .single();
+
+    if (error || !user) {
+      throw ApiError.NotFound("User with this email not found");
+    }
+
+    const resetToken = this.generateResetToken({
+      id: user.id,
+      email: user.email,
+    });
+
+    await this.saveResetToken(user.id, resetToken);
+
+    try {
+      await mailService.sendPasswordResetMail(
+        user.email,
+        `${process.env.CLIENT_URL}/reset-password/${resetToken}`,
+      );
+    } catch (error) {
+      console.error("Failed to send password reset email:", error);
+      throw ApiError.BadRequest("Failed to send reset email");
+    }
+  }
+
+  public async resetPassword(
+    resetToken: string,
+    newPassword: string,
+  ): Promise<void> {
+    if (!resetToken || !newPassword) {
+      throw ApiError.BadRequest("Reset token and new password are required");
+    }
+
+    const userData = await this.validateResetToken(resetToken);
+
+    if (!userData) {
+      throw ApiError.UnauthorizedError("Invalid or expired reset token");
+    }
+
+    const tokenExists = await this.findResetToken(resetToken);
+
+    if (!tokenExists) {
+      throw ApiError.UnauthorizedError("Reset token not found or already used");
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("id", userData.id)
+      .single();
+
+    if (userError || !user) {
+      throw ApiError.NotFound("User not found");
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ password: hashedPassword })
+      .eq("id", user.id);
+
+    if (updateError) {
+      throw ApiError.BadRequest("Failed to update password");
+    }
+
+    await this.removeResetToken(resetToken);
   }
 }
 

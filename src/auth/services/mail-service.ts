@@ -1,6 +1,7 @@
 import nodemailer, { Transporter } from "nodemailer";
 
 import { activationMailTemplate } from "../views/activation-mail.js";
+import { resetPasswordMailTemplate } from "../views/reset-password-mail.js";
 
 class MailService {
   private transporter: Transporter | null;
@@ -28,14 +29,36 @@ class MailService {
       throw new Error("Transporter not initialized");
     }
 
-    const info = await this.transporter.sendMail({
+    await this.transporter.sendMail({
       from: process.env.SMTP_USER,
       to,
       subject: `Activating an account in ${process.env.API_URL}`,
       html: activationMailTemplate(link),
     });
+  }
 
-    console.log("Email sent successfully:", info.messageId);
+  public async sendPasswordResetMail(
+    to: string,
+    resetLink: string,
+  ): Promise<void> {
+    this.initializeTransporter();
+
+    if (!this.transporter) {
+      throw new Error("Transporter not initialized");
+    }
+
+    const smtpUser = process.env.SMTP_USER;
+
+    try {
+      await this.transporter.sendMail({
+        from: smtpUser,
+        to,
+        subject: `Password Reset Request - ${process.env.API_URL}`,
+        html: resetPasswordMailTemplate(resetLink),
+      });
+    } catch {
+      throw new Error("Failed to send password reset email");
+    }
   }
 }
 
