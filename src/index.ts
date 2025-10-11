@@ -12,7 +12,7 @@ import { errorMiddleware } from "./shared/middlewares/error-middleware.js";
 const SUPABASE_URL = process.env.SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY as string;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const PORT = process.env.PORT || 5000;
 const app = express();
@@ -25,9 +25,10 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
-app.use(errorMiddleware);
 
 router(app);
+
+app.use(errorMiddleware);
 
 const start = async () => {
   try {
