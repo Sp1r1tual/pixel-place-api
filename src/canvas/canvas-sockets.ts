@@ -25,6 +25,9 @@ interface CanvasSocket extends Socket {
   user?: { id: string; email: string };
 }
 
+const CANVAS_WIDTH = 1000;
+const CANVAS_HEIGHT = 1000;
+
 const canvasState: Record<string, string> = {}; // key = "x:y", value = color
 
 const initCanvasSocket = (server: HttpServer) => {
@@ -78,16 +81,38 @@ const initCanvasSocket = (server: HttpServer) => {
     socket.on(
       "sendBatch",
       socketErrorMiddleware<[IPixel[] | undefined]>(
-        async (pixels?: IPixel[]) => {
-          if (!pixels || !Array.isArray(pixels) || pixels.length === 0) {
-            throw ApiError.BadRequest("No pixels sent");
+        async (pixels?: IPixel[], callback?: (err?: string) => void) => {
+          try {
+            if (!pixels || !Array.isArray(pixels) || pixels.length === 0) {
+              throw new Error("No pixels sent");
+            }
+
+            pixels.forEach((p) => {
+              if (
+                p.x < 0 ||
+                p.x >= CANVAS_WIDTH ||
+                p.y < 0 ||
+                p.y >= CANVAS_HEIGHT
+              ) {
+                throw new Error(`Pixel out of bounds: x=${p.x}, y=${p.y}`);
+              }
+            });
+
+            pixels.forEach((p) => {
+              canvasState[`${p.x}:${p.y}`] = p.color;
+            });
+
+            io.emit("updatePixels", pixels);
+            if (callback) callback();
+          } catch (err: unknown) {
+            if (err instanceof Error) {
+              console.error("[socket] sendBatch error:", err.message);
+              if (callback) callback(err.message);
+            } else {
+              console.error("[socket] sendBatch unknown error:", err);
+              if (callback) callback("Unknown error");
+            }
           }
-
-          pixels.forEach((p) => {
-            canvasState[`${p.x}:${p.y}`] = p.color;
-          });
-
-          io.emit("updatePixels", pixels);
         },
         socket,
       ),

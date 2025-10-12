@@ -23,7 +23,7 @@ class AuthService {
       throw new Error("JWT secrets are not defined in environment variables");
     }
 
-    const accessToken = jwt.sign(payload, accessSecret, { expiresIn: "15m" });
+    const accessToken = jwt.sign(payload, accessSecret, { expiresIn: "1m" });
     const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: "30d" });
 
     return { accessToken, refreshToken };
