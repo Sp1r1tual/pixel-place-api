@@ -83,8 +83,11 @@ const initCanvasSocket = (server: HttpServer) => {
       "getEnergy",
       socketErrorMiddleware(async (_, callback) => {
         if (!socket.user) throw new Error("Unauthorized");
-        const energy = await canvasService.getEnergy(socket.user.id);
-        if (callback) callback(energy);
+
+        const { energy, maxEnergy } = await canvasService.getEnergy(
+          socket.user.id,
+        );
+        if (callback) callback(energy, maxEnergy);
       }),
     );
 
@@ -93,7 +96,11 @@ const initCanvasSocket = (server: HttpServer) => {
       socketErrorMiddleware<[IPixel[] | undefined]>(
         async (
           pixels?: IPixel[],
-          callback?: (err?: string, energyLeft?: number) => void,
+          callback?: (
+            err?: string,
+            energyLeft?: number,
+            maxEnergy?: number,
+          ) => void,
         ) => {
           try {
             if (!socket.user) throw new Error("Unauthorized");
@@ -113,10 +120,8 @@ const initCanvasSocket = (server: HttpServer) => {
             });
 
             const totalEnergyCost = pixels.length;
-            const energyLeft = await canvasService.useEnergy(
-              socket.user.id,
-              totalEnergyCost,
-            );
+            const { energy: energyLeft, maxEnergy } =
+              await canvasService.useEnergy(socket.user.id, totalEnergyCost);
 
             pixels.forEach((p) => {
               canvasState[`${p.x}:${p.y}`] = p.color;
@@ -125,7 +130,7 @@ const initCanvasSocket = (server: HttpServer) => {
             io.emit("updatePixels", pixels);
             socket.emit("energyUpdate", energyLeft);
 
-            if (callback) callback(undefined, energyLeft);
+            if (callback) callback(undefined, energyLeft, maxEnergy);
           } catch (err: unknown) {
             if (callback)
               callback(err instanceof Error ? err.message : "Unknown error");

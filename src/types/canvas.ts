@@ -1,4 +1,4 @@
-export interface IUserEnergyData {
+export interface IEnergyResult {
   energy: number;
-  last_updated_at: string;
+  maxEnergy: number;
 }
