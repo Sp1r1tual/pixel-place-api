@@ -12,9 +12,11 @@ const socketErrorMiddleware = <T extends unknown[]>(
       console.error(err);
 
       if (err instanceof ApiError) {
-        this.emit("error", { message: err.message, errors: err.errors });
+        this.emit("server_error", { message: err.message, errors: err.errors });
+      } else if (err instanceof Error) {
+        this.emit("server_error", { message: err.message });
       } else {
-        this.emit("error", { message: "Something went wrong" });
+        this.emit("server_error", { message: "Unknown server error" });
       }
     }
   };

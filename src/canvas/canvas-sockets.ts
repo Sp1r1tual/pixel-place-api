@@ -49,7 +49,6 @@ const initCanvasSocket = (server: HttpServer) => {
       if (msToExpire > 0) {
         setTimeout(() => {
           socket.emit("token_expired");
-          socket.disconnect(true);
         }, msToExpire);
       }
 
@@ -76,6 +75,26 @@ const initCanvasSocket = (server: HttpServer) => {
       );
       socket.emit("energyUpdate", energy, maxEnergy);
     }
+
+    socket.on("token_refresh", (newToken: string) => {
+      try {
+        const payload = authService.validateAccessToken(
+          newToken,
+        ) as ITokenPayload;
+        socket.user = { id: payload.id, email: payload.email };
+
+        const msToExpire = payload.exp * 1000 - Date.now();
+        if (msToExpire > 0) {
+          setTimeout(() => socket.emit("token_expired"), msToExpire);
+        }
+
+        console.log(`[socket] Token refreshed for ${socket.user.email}`);
+      } catch (err) {
+        console.error("[socket] Invalid refreshed token:", err);
+        socket.emit("server_error", { message: "Invalid token after refresh" });
+        socket.disconnect(true);
+      }
+    });
 
     socket.on(
       "getEnergy",
