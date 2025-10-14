@@ -4,10 +4,12 @@ import { Server as HttpServer } from "http";
 import { socketErrorMiddleware } from "./middlewares/socket-error-middleware.js";
 
 import { AuthService } from "../auth/services/auth-service.js";
+import { CanvasService } from "./services/canvas-service.js";
 
 import { ApiError } from "../shared/exceptions/api-error.js";
 
 const authService = new AuthService();
+const canvasService = new CanvasService();
 
 interface ITokenPayload {
   id: string;
@@ -75,14 +77,26 @@ const initCanvasSocket = (server: HttpServer) => {
 
   io.on("connection", (socket: CanvasSocket) => {
     console.log("User connected to canvas:", socket.id);
-
     socket.emit("canvasState", canvasState);
+
+    socket.on(
+      "getEnergy",
+      socketErrorMiddleware(async (_, callback) => {
+        if (!socket.user) throw new Error("Unauthorized");
+        const energy = await canvasService.getEnergy(socket.user.id);
+        if (callback) callback(energy);
+      }),
+    );
 
     socket.on(
       "sendBatch",
       socketErrorMiddleware<[IPixel[] | undefined]>(
-        async (pixels?: IPixel[], callback?: (err?: string) => void) => {
+        async (
+          pixels?: IPixel[],
+          callback?: (err?: string, energyLeft?: number) => void,
+        ) => {
           try {
+            if (!socket.user) throw new Error("Unauthorized");
             if (!pixels || !Array.isArray(pixels) || pixels.length === 0) {
               throw new Error("No pixels sent");
             }
@@ -98,23 +112,25 @@ const initCanvasSocket = (server: HttpServer) => {
               }
             });
 
+            const totalEnergyCost = pixels.length;
+            const energyLeft = await canvasService.useEnergy(
+              socket.user.id,
+              totalEnergyCost,
+            );
+
             pixels.forEach((p) => {
               canvasState[`${p.x}:${p.y}`] = p.color;
             });
 
             io.emit("updatePixels", pixels);
-            if (callback) callback();
+            socket.emit("energyUpdate", energyLeft);
+
+            if (callback) callback(undefined, energyLeft);
           } catch (err: unknown) {
-            if (err instanceof Error) {
-              console.error("[socket] sendBatch error:", err.message);
-              if (callback) callback(err.message);
-            } else {
-              console.error("[socket] sendBatch unknown error:", err);
-              if (callback) callback("Unknown error");
-            }
+            if (callback)
+              callback(err instanceof Error ? err.message : "Unknown error");
           }
         },
-        socket,
       ),
     );
 

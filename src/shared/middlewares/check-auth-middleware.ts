@@ -1,18 +1,14 @@
 import { Request, Response, NextFunction } from "express";
 
-import { IUser } from "../../types/auth.js";
+import { IAuthRequest } from "../../types/auth.js";
 
 import { AuthService } from "../../auth/services/auth-service.js";
 import { ApiError } from "../exceptions/api-error.js";
 
 const authService = new AuthService();
 
-interface AuthRequest extends Request {
-  user?: IUser;
-}
-
 const checkAuthMiddleware = async (
-  req: AuthRequest,
+  req: Request,
   res: Response,
   next: NextFunction,
 ) => {
@@ -26,7 +22,8 @@ const checkAuthMiddleware = async (
     const userData = authService.validateAccessToken(token);
     if (!userData) return next(ApiError.UnauthorizedError());
 
-    req.user = userData;
+    const authReq = req as IAuthRequest;
+    authReq.user = userData;
 
     next();
   } catch {
