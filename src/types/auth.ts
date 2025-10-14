@@ -14,3 +14,9 @@ export interface IUser {
 export interface IAuthRequest extends Request {
   user: IUser;
 }
+
+export interface ITokenPayload {
+  id: string;
+  email: string;
+  exp: number;
+}
