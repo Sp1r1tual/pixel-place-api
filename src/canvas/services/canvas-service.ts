@@ -42,10 +42,18 @@ class CanvasService {
   }
 
   public async getAllPixels(): Promise<IPixel[]> {
-    const { data, error } = await supabase.from("pixels").select("x, y, color");
+    const { data, error } = await supabase
+      .from("pixels")
+      .select("x, y, color, user_id");
 
     if (error) throw ApiError.BadRequest(error.message);
-    return data || [];
+
+    return (data || []).map((pixel) => ({
+      x: pixel.x,
+      y: pixel.y,
+      color: pixel.color,
+      userId: pixel.user_id,
+    }));
   }
 
   public async placePixel(

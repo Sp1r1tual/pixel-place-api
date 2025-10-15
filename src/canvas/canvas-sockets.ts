@@ -21,7 +21,7 @@ interface CanvasSocket extends Socket {
 const CANVAS_WIDTH = 1000;
 const CANVAS_HEIGHT = 1000;
 
-const canvasState: Record<string, string> = {};
+const canvasState: Record<string, IPixel> = {};
 
 const initCanvasSocket = (server: HttpServer) => {
   const io = new IOServer(server, {
@@ -64,10 +64,15 @@ const initCanvasSocket = (server: HttpServer) => {
 
     const pixelsFromDb = await canvasService.getAllPixels();
     pixelsFromDb.forEach((p) => {
-      canvasState[`${p.x}:${p.y}`] = p.color;
+      canvasState[`${p.x}:${p.y}`] = {
+        x: p.x,
+        y: p.y,
+        color: p.color,
+        userId: p.userId,
+      };
     });
 
-    socket.emit("canvasState", canvasState);
+    socket.emit("canvasState", Object.values(canvasState));
 
     if (socket.user) {
       const { energy, maxEnergy } = await canvasService.getEnergy(
@@ -133,15 +138,27 @@ const initCanvasSocket = (server: HttpServer) => {
             }
           }
 
+          const pixelsWithUserId: IPixel[] = [];
           let lastEnergyResult = null;
+
           for (const pixel of pixels) {
             lastEnergyResult = await canvasService.placePixel(
               socket.user.id,
               pixel,
             );
+
+            const pixelWithUserId: IPixel = {
+              x: pixel.x,
+              y: pixel.y,
+              color: pixel.color,
+              userId: socket.user.id,
+            };
+
+            pixelsWithUserId.push(pixelWithUserId);
+            canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
           }
 
-          io.emit("updatePixels", pixels);
+          io.emit("updatePixels", pixelsWithUserId);
           socket.emit(
             "energyUpdate",
             lastEnergyResult?.energy,
