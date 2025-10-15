@@ -7,137 +7,139 @@ import { ApiError } from "../../shared/exceptions/api-error.js";
 class CanvasService {
   private readonly DEFAULT_MAX_ENERGY = 10;
 
+  private calculateElapsedMinutes(lastUpdated: Date, now: Date) {
+    return Math.floor((now.getTime() - lastUpdated.getTime()) / 60000);
+  }
+
+  private async getUserEnergyRow(userId: string) {
+    const { data, error } = await supabase
+      .from("user_energy")
+      .select("*")
+      .eq("user_id", userId)
+      .limit(1)
+      .single();
+
+    if (error && error.code !== "PGRST116")
+      throw ApiError.BadRequest(error.message);
+    return data;
+  }
+
+  private async updateEnergyRow(userId: string, energy: number, now: Date) {
+    const { error } = await supabase
+      .from("user_energy")
+      .update({ energy, updated_at: now.toISOString() })
+      .eq("user_id", userId);
+
+    if (error) throw ApiError.BadRequest(error.message);
+  }
+
+  private validatePixel(pixel: IPixel) {
+    const { x, y, color } = pixel;
+    if (
+      typeof x !== "number" ||
+      typeof y !== "number" ||
+      !color.startsWith("#")
+    ) {
+      throw ApiError.BadRequest("Invalid pixel data");
+    }
+  }
+
   public async useEnergy(
     userId: string,
     amount: number,
   ): Promise<IEnergyResult> {
-    if (typeof amount !== "number" || amount <= 0) {
-      throw ApiError.BadRequest("Invalid energy amount");
+    if (amount <= 0) throw ApiError.BadRequest("Invalid energy amount");
+
+    const now = new Date();
+    const row = await this.getUserEnergyRow(userId);
+    let maxEnergy = this.DEFAULT_MAX_ENERGY;
+    let newEnergy: number;
+
+    if (!row) {
+      newEnergy = maxEnergy - amount;
+      if (newEnergy < 0) throw ApiError.Forbidden("Not enough energy");
+
+      await supabase.from("user_energy").insert({
+        user_id: userId,
+        energy: newEnergy,
+        max_energy: maxEnergy,
+        updated_at: now.toISOString(),
+      });
+      return { energy: newEnergy, maxEnergy };
     }
 
-    const { data, error } = await supabase.rpc("use_energy_atomic", {
-      p_user_id: userId,
-      p_amount: amount,
-    });
+    maxEnergy = row.max_energy;
+    const elapsedMinutes = this.calculateElapsedMinutes(
+      new Date(row.updated_at),
+      now,
+    );
+    const energyAfterRegen = Math.min(row.energy + elapsedMinutes, maxEnergy);
+    newEnergy = energyAfterRegen - amount;
+    if (newEnergy < 0) throw ApiError.Forbidden("Not enough energy");
 
-    if (error) {
-      if (error.message.includes("Not enough energy")) {
-        throw ApiError.Forbidden("Not enough energy");
-      }
-      throw ApiError.BadRequest(error.message);
-    }
-
-    if (
-      !data ||
-      typeof data.current_energy !== "number" ||
-      typeof data.max_energy_value !== "number"
-    ) {
-      throw ApiError.BadRequest("Invalid energy response");
-    }
-
-    return {
-      energy: data.current_energy,
-      maxEnergy: data.max_energy_value,
-    };
-  }
-
-  public async getAllPixels(): Promise<IPixel[]> {
-    const { data, error } = await supabase
-      .from("pixels")
-      .select("x, y, color, user_id");
-
-    if (error) throw ApiError.BadRequest(error.message);
-
-    return (data || []).map((pixel) => ({
-      x: pixel.x,
-      y: pixel.y,
-      color: pixel.color,
-      userId: pixel.user_id,
-    }));
+    await this.updateEnergyRow(userId, newEnergy, now);
+    return { energy: newEnergy, maxEnergy };
   }
 
   public async placePixel(
     userId: string,
     pixel: IPixel,
   ): Promise<IEnergyResult> {
-    const { x, y, color } = pixel;
-
-    if (
-      typeof x !== "number" ||
-      typeof y !== "number" ||
-      typeof color !== "string" ||
-      !color.startsWith("#")
-    ) {
-      throw ApiError.BadRequest("Invalid pixel data");
-    }
-
+    this.validatePixel(pixel);
     const energyResult = await this.useEnergy(userId, 1);
 
-    const { error: upsertError } = await supabase.from("pixels").upsert(
-      {
-        user_id: userId,
-        x,
-        y,
-        color,
-        placed_at: new Date().toISOString(),
-      },
-      { onConflict: "x, y" },
-    );
+    const { error } = await supabase
+      .from("pixels")
+      .upsert(
+        { ...pixel, user_id: userId, placed_at: new Date().toISOString() },
+        { onConflict: "x, y" },
+      );
 
-    if (upsertError) {
-      throw ApiError.BadRequest(upsertError.message);
-    }
-
+    if (error) throw ApiError.BadRequest(error.message);
     return energyResult;
+  }
+
+  public async getAllPixels(): Promise<IPixel[]> {
+    const { data, error } = await supabase
+      .from("pixels")
+      .select("x, y, color, user_id");
+    if (error) throw ApiError.BadRequest(error.message);
+
+    return (data || []).map((p) => ({
+      x: p.x,
+      y: p.y,
+      color: p.color,
+      userId: p.user_id,
+    }));
   }
 
   public async getEnergy(userId: string): Promise<IEnergyResult> {
     const now = new Date();
+    const row = await this.getUserEnergyRow(userId);
 
-    const { data, error } = await supabase
-      .from("user_energy")
-      .select("energy, max_energy, updated_at")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (error && error.code !== "PGRST116") {
-      throw ApiError.BadRequest(error.message);
-    }
-
-    if (!data) {
-      const { error: insertError } = await supabase.from("user_energy").insert({
+    if (!row) {
+      await supabase.from("user_energy").insert({
         user_id: userId,
         energy: this.DEFAULT_MAX_ENERGY,
         max_energy: this.DEFAULT_MAX_ENERGY,
         updated_at: now.toISOString(),
       });
-      if (insertError) throw ApiError.BadRequest(insertError.message);
-
       return {
         energy: this.DEFAULT_MAX_ENERGY,
         maxEnergy: this.DEFAULT_MAX_ENERGY,
       };
     }
 
-    const lastUpdated = new Date(data.updated_at);
-    const diffMinutes = Math.floor(
-      (now.getTime() - lastUpdated.getTime()) / 60000,
+    const elapsedMinutes = this.calculateElapsedMinutes(
+      new Date(row.updated_at),
+      now,
     );
+    const regenerated = Math.min(row.energy + elapsedMinutes, row.max_energy);
 
-    const regenerated = Math.min(data.energy + diffMinutes, data.max_energy);
+    if (regenerated !== row.energy)
+      await this.updateEnergyRow(userId, regenerated, now);
 
-    if (regenerated !== data.energy) {
-      const { error: updateError } = await supabase
-        .from("user_energy")
-        .update({
-          energy: regenerated,
-          updated_at: now.toISOString(),
-        })
-        .eq("user_id", userId);
-      if (updateError) throw ApiError.BadRequest(updateError.message);
-    }
-
-    return { energy: regenerated, maxEnergy: data.max_energy };
+    return { energy: regenerated, maxEnergy: row.max_energy };
   }
 }
 
