@@ -16,7 +16,7 @@ const socketErrorMiddleware = <T extends unknown[]>(
       } else if (err instanceof Error) {
         this.emit("server_error", { message: err.message });
       } else {
-        this.emit("server_error", { message: "Unknown server error" });
+        this.emit("server_error", { message: "errors.something-went-wrong" });
       }
     }
   };

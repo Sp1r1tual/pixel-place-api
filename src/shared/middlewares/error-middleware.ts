@@ -16,7 +16,7 @@ const errorMiddleware = (
       .json({ message: err.message, errors: err.errors });
   }
 
-  return res.status(500).json({ message: "Something went wrong" });
+  return res.status(500).json({ message: "errors.something-went-wrong" });
 };
 
 export { errorMiddleware };

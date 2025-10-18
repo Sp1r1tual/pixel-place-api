@@ -3,6 +3,7 @@ import { supabase } from "../../index.js";
 import { IPixel, IEnergyResult } from "../../types/canvas.js";
 
 import { ApiError } from "../../shared/exceptions/api-error.js";
+import { CANVAS_ERRORS } from "../utils/errors/errors-messages.js";
 
 class CanvasService {
   private readonly DEFAULT_MAX_ENERGY = 10;
@@ -20,7 +21,7 @@ class CanvasService {
       .single();
 
     if (error && error.code !== "PGRST116")
-      throw ApiError.BadRequest(error.message);
+      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
     return data;
   }
 
@@ -30,7 +31,8 @@ class CanvasService {
       .update({ energy, updated_at: now.toISOString() })
       .eq("user_id", userId);
 
-    if (error) throw ApiError.BadRequest(error.message);
+    if (error)
+      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
   }
 
   private validatePixel(pixel: IPixel) {
@@ -40,7 +42,7 @@ class CanvasService {
       typeof y !== "number" ||
       !color.startsWith("#")
     ) {
-      throw ApiError.BadRequest("Invalid pixel data");
+      throw ApiError.BadRequest(CANVAS_ERRORS.invalidPixel);
     }
   }
 
@@ -48,7 +50,8 @@ class CanvasService {
     userId: string,
     amount: number,
   ): Promise<IEnergyResult> {
-    if (amount <= 0) throw ApiError.BadRequest("Invalid energy amount");
+    if (amount <= 0)
+      throw ApiError.BadRequest(CANVAS_ERRORS.invalidEnergyAmount);
 
     const now = new Date();
     const row = await this.getUserEnergyRow(userId);
@@ -57,7 +60,8 @@ class CanvasService {
 
     if (!row) {
       newEnergy = maxEnergy - amount;
-      if (newEnergy < 0) throw ApiError.Forbidden("Not enough energy");
+      if (newEnergy < 0)
+        throw ApiError.Forbidden(CANVAS_ERRORS.notEnoughEnergy);
 
       await supabase.from("user_energy").insert({
         user_id: userId,
@@ -75,7 +79,7 @@ class CanvasService {
     );
     const energyAfterRegen = Math.min(row.energy + elapsedMinutes, maxEnergy);
     newEnergy = energyAfterRegen - amount;
-    if (newEnergy < 0) throw ApiError.Forbidden("Not enough energy");
+    if (newEnergy < 0) throw ApiError.Forbidden(CANVAS_ERRORS.notEnoughEnergy);
 
     await this.updateEnergyRow(userId, newEnergy, now);
     return { energy: newEnergy, maxEnergy };
@@ -95,7 +99,8 @@ class CanvasService {
         { onConflict: "x, y" },
       );
 
-    if (error) throw ApiError.BadRequest(error.message);
+    if (error)
+      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
     return energyResult;
   }
 
@@ -103,7 +108,8 @@ class CanvasService {
     const { data, error } = await supabase
       .from("pixels")
       .select("x, y, color, user_id");
-    if (error) throw ApiError.BadRequest(error.message);
+    if (error)
+      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
 
     return (data || []).map((p) => ({
       x: p.x,
