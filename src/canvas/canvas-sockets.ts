@@ -75,10 +75,13 @@ const initCanvasSocket = (server: HttpServer) => {
     socket.emit("canvasState", Object.values(canvasState));
 
     if (socket.user) {
-      const { energy, maxEnergy } = await canvasService.getEnergy(
-        socket.user.id,
+      const result = await canvasService.getEnergy(socket.user.id);
+      socket.emit(
+        "energyUpdate",
+        result.energy,
+        result.maxEnergy,
+        result.recoverySpeed,
       );
-      socket.emit("energyUpdate", energy, maxEnergy);
     }
 
     socket.on("token_refresh", (newToken: string) => {
@@ -105,10 +108,13 @@ const initCanvasSocket = (server: HttpServer) => {
       "getEnergy",
       socketErrorMiddleware(async (_, callback) => {
         if (!socket.user) throw new Error("Unauthorized");
-        const { energy, maxEnergy } = await canvasService.getEnergy(
-          socket.user.id,
+        const result = await canvasService.getEnergy(socket.user.id);
+        callback(
+          result.energy,
+          result.maxEnergy,
+          result.recoverySpeed,
+          new Date().toISOString(),
         );
-        callback?.(energy, maxEnergy);
       }),
     );
 
@@ -139,37 +145,30 @@ const initCanvasSocket = (server: HttpServer) => {
           }
 
           const pixelsWithUserId: IPixel[] = [];
-          let lastEnergyResult = null;
 
           for (const pixel of pixels) {
-            lastEnergyResult = await canvasService.placePixel(
-              socket.user.id,
-              pixel,
-            );
-
+            await canvasService.placePixel(socket.user.id, pixel);
             const pixelWithUserId: IPixel = {
               x: pixel.x,
               y: pixel.y,
               color: pixel.color,
               userId: socket.user.id,
             };
-
             pixelsWithUserId.push(pixelWithUserId);
             canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
           }
 
           io.emit("updatePixels", pixelsWithUserId);
+
+          const energyResult = await canvasService.getEnergy(socket.user.id);
           socket.emit(
             "energyUpdate",
-            lastEnergyResult?.energy,
-            lastEnergyResult?.maxEnergy,
+            energyResult.energy,
+            energyResult.maxEnergy,
+            energyResult.recoverySpeed,
           );
 
-          callback?.(
-            undefined,
-            lastEnergyResult?.energy,
-            lastEnergyResult?.maxEnergy,
-          );
+          callback?.(undefined, energyResult.energy, energyResult.maxEnergy);
         },
       ),
     );
