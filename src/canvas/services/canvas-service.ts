@@ -13,7 +13,7 @@ interface IEnergyResultWithSpeed extends IEnergyResult {
 class CanvasService {
   private readonly DEFAULT_MAX_ENERGY = 10;
   private readonly BASE_RECOVERY_INTERVAL_SECONDS = 60;
-  private readonly MIN_RECOVERY_INTERVAL_SECONDS = 30;
+  private readonly MIN_RECOVERY_INTERVAL_SECONDS = 24;
 
   private calculateElapsedSeconds(lastUpdated: Date, now: Date): number {
     return Math.floor((now.getTime() - lastUpdated.getTime()) / 1000);

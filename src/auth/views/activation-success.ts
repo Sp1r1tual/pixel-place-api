@@ -1,87 +1,81 @@
 const activationSuccessHTML = (loginUrl: string) => `
 <!DOCTYPE html>
 <html>
-    <head>
-        <meta charset="UTF-8" />
-        <title>Account Activated</title>
-        <style>
-            body {
-                font-family: "Georgia", serif;
-                margin: 0;
-                height: 100vh;
-                display: flex;
-                justify-content: center;
-                align-items: center;
+<head>
+    <meta charset="UTF-8" />
+    <title>Account Activated</title>
+    <style>
+        body {
+            font-family: "Arial", sans-serif;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f2f5;
+        }
 
-                background: linear-gradient(-45deg, #f7d9d9, #f7eae3ff, #e4d9d4ff, #F7F1EE);
-                background-size: 400% 400%;
-                animation: gradientBG 12s ease infinite;
-            }
+        .contentForm {
+            background-color: #e1e3e8;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            width: 360px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
 
-            @keyframes gradientBG {
-                0% { background-position: 0% 50%; }
-                50% { background-position: 100% 50%; }
-                100% { background-position: 0% 50%; }
-            }
+        .formTitle {
+            font-size: 1.6rem;
+            color: #2c3e50;
+            margin-bottom: 1rem;
+        }
 
-            .contentForm {
-                background-color: rgba(247, 241, 238, 0.9);
-                padding: 1.5rem;
-                border-radius: 0.75rem;
-                box-shadow: 0 0 15px rgba(80, 50, 40, 0.2);
-                width: 320px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-            }
-            .formTitle {
-                font-size: 1.5rem;
-                color: #4d2c20;
-                margin-bottom: 1rem;
-                text-align: center;
-            }
-            .success {
-                color: #28a745;
-                font-size: 0.875rem;
-                margin-bottom: 0.75rem;
-                text-align: center;
-            }
-            .redirect-info {
-                font-size: 0.75rem;
-                color: #3b2b23;
-                margin-bottom: 1rem;
-                text-align: center;
-            }
-            .btn {
-                padding: 0.5rem 1rem;
-                background-color: #7d5032;
-                color: white;
-                border: none;
-                border-radius: 0.4rem;
-                font-weight: bold;
-                font-size: 0.875rem;
-                cursor: pointer;
-                text-decoration: none;
-                transition: background-color 0.2s ease;
-            }
-            .btn:hover {
-                background-color: #5e3e28;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="contentForm">
-            <h1 class="formTitle">Account successfully activated!</h1>
-            <p class="success">Now you can log in Questanizer</p>
-            <p class="redirect-info">Redirect in 3 seconds...</p>
-            <a href="${loginUrl}" class="btn">Log in now</a>
-        </div>
-        <script>
-            setTimeout(() => {
-                window.location.href = "${loginUrl}";
-            }, 3000);
-        </script>
-    </body>
+        .success {
+            color: #27ae60;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .redirect-info {
+            font-size: 0.875rem;
+            color: #34495e;
+            margin-bottom: 1.5rem;
+        }
+
+        .btn {
+            padding: 0.6rem 1.2rem;
+            background-color: #3b4a5a;
+            color: #fff;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            font-size: 0.95rem;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn:hover {
+            background-color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div class="contentForm">
+        <h1 class="formTitle">Account activated!</h1>
+        <p class="success">You can now log in to Pixel Place</p>
+        <p class="redirect-info">Redirecting in 3 seconds...</p>
+        <a href="${loginUrl}" class="btn">Log in now</a>
+    </div>
+    <script>
+        setTimeout(() => {
+            window.location.href = "${loginUrl}";
+        }, 3000);
+    </script>
+</body>
 </html>
 `;
 
