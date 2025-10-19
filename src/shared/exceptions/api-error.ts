@@ -1,15 +1,33 @@
+type ToastType = "success" | "error" | "warn" | "warning" | "info";
+
+interface IApiErrorPayload {
+  text: string;
+  type?: ToastType;
+}
+
 class ApiError extends Error {
   status: number;
-  errors;
+  errors: unknown;
+  payload?: IApiErrorPayload;
 
-  constructor(status: number, message: string, errors = []) {
+  constructor(
+    status: number,
+    message: string,
+    errors: unknown = [],
+    payload?: IApiErrorPayload,
+  ) {
     super(message);
     this.status = status;
     this.errors = errors;
+    if (payload) this.payload = payload;
   }
 
-  static BadRequest(message = "Bad request", errors = []) {
-    return new ApiError(400, message, errors);
+  static BadRequest(
+    message: string | IApiErrorPayload = "Bad request",
+    errors: unknown[] = [],
+  ) {
+    if (typeof message === "string") return new ApiError(400, message, errors);
+    return new ApiError(400, message.text, errors, message);
   }
 
   static UnauthorizedError(message = "User is not authorized") {

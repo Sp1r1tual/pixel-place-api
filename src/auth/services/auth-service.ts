@@ -8,6 +8,7 @@ import { supabase } from "../../index.js";
 import { mailService } from "./mail-service.js";
 import { ApiError } from "../../shared/exceptions/api-error.js";
 import { UserDto } from "../../shared/dto/userDto.js";
+import { AUTH_ERRORS } from "../utils/errors/errors-messages.js";
 
 interface ITokens {
   accessToken: string;
@@ -150,13 +151,14 @@ class AuthService {
       .eq("email", email)
       .single();
 
-    if (error || !user) throw ApiError.NotFound("User not found");
+    if (error || !user) throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) throw ApiError.UnauthorizedError("Incorrect password");
+    if (!isMatch)
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.incorrectPassword);
 
     if (!user.is_activated) {
-      throw ApiError.UnauthorizedError("User is not activated");
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.userNotActivated);
     }
 
     const userDto = new UserDto(user);
@@ -174,7 +176,7 @@ class AuthService {
       .eq("email", email)
       .maybeSingle();
 
-    if (existing) throw ApiError.BadRequest("User already exists");
+    if (existing) throw ApiError.BadRequest(AUTH_ERRORS.userAlreadyExists);
 
     const hashPassword = await bcrypt.hash(password, 10);
     const activationLink = uuidv4();
@@ -192,7 +194,7 @@ class AuthService {
 
     if (error || !user) {
       console.error("Supabase insert error:", error);
-      throw ApiError.BadRequest("Registration failed");
+      throw ApiError.BadRequest(AUTH_ERRORS.registrationFailed);
     }
 
     await mailService.sendActivationMail(
@@ -224,7 +226,7 @@ class AuthService {
       .single();
 
     if (error || !user)
-      throw ApiError.NotFound("Invalid or expired activation link");
+      throw ApiError.NotFound(AUTH_ERRORS.invalidActivationLink);
 
     if (user.is_activated) return;
 
@@ -238,7 +240,7 @@ class AuthService {
 
   public async refresh(refreshToken: string) {
     if (!refreshToken)
-      throw ApiError.UnauthorizedError("Missing refresh token");
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.missingRefreshToken);
 
     const secret = process.env.JWT_REFRESH_SECRET;
     if (!secret) throw new Error("JWT_REFRESH_SECRET not set");
@@ -256,7 +258,7 @@ class AuthService {
         .single();
 
       if (!tokenRecord)
-        throw ApiError.UnauthorizedError("Invalid refresh token");
+        throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidRefreshToken);
 
       const { data: user } = await supabase
         .from("users")
@@ -264,7 +266,7 @@ class AuthService {
         .eq("id", userData.id)
         .single();
 
-      if (!user) throw ApiError.NotFound("User not found");
+      if (!user) throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
 
       const userDto = new UserDto(user);
       const tokens = this.generateTokens({ ...userDto });
@@ -272,7 +274,7 @@ class AuthService {
 
       return { ...tokens, user: userDto };
     } catch {
-      throw ApiError.UnauthorizedError("Token verification failed");
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.tokenVerificationFailed);
     }
   }
 
@@ -284,7 +286,7 @@ class AuthService {
       .single();
 
     if (error || !user) {
-      throw ApiError.NotFound("User with this email not found");
+      throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
     }
 
     const resetToken = this.generateResetToken({
@@ -301,7 +303,7 @@ class AuthService {
       );
     } catch (error) {
       console.error("Failed to send password reset email:", error);
-      throw ApiError.BadRequest("Failed to send reset email");
+      throw ApiError.BadRequest(AUTH_ERRORS.passwordResetFailed);
     }
   }
 
@@ -310,20 +312,18 @@ class AuthService {
     newPassword: string,
   ): Promise<void> {
     if (!resetToken || !newPassword) {
-      throw ApiError.BadRequest("Reset token and new password are required");
+      throw ApiError.BadRequest(AUTH_ERRORS.tokenAndPasswordRequired);
     }
 
     const userData = await this.validateResetToken(resetToken);
 
-    if (!userData) {
-      throw ApiError.UnauthorizedError("Invalid or expired reset token");
-    }
+    if (!userData)
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.resetTokenInvalid);
 
     const tokenExists = await this.findResetToken(resetToken);
 
-    if (!tokenExists) {
-      throw ApiError.UnauthorizedError("Reset token not found or already used");
-    }
+    if (!tokenExists)
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.resetTokenUsed);
 
     const { data: user, error: userError } = await supabase
       .from("users")
@@ -332,7 +332,7 @@ class AuthService {
       .single();
 
     if (userError || !user) {
-      throw ApiError.NotFound("User not found");
+      throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -343,7 +343,7 @@ class AuthService {
       .eq("id", user.id);
 
     if (updateError) {
-      throw ApiError.BadRequest("Failed to update password");
+      throw ApiError.BadRequest(AUTH_ERRORS.resetPasswordFailed);
     }
 
     await this.removeResetToken(resetToken);

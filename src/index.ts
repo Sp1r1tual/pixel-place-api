@@ -3,8 +3,11 @@ dotenv.config();
 
 import express from "express";
 import cors from "cors";
+import http from "http";
 import cookieParser from "cookie-parser";
 import { createClient } from "@supabase/supabase-js";
+
+import { initCanvasSocket } from "./canvas/canvas-sockets.js";
 
 import { router } from "./router.js";
 import { errorMiddleware } from "./shared/middlewares/error-middleware.js";
@@ -16,6 +19,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const PORT = process.env.PORT || 5000;
 const app = express();
+const server = http.createServer(app);
 
 app.use(
   cors({
@@ -30,6 +34,8 @@ router(app);
 
 app.use(errorMiddleware);
 
+initCanvasSocket(server);
+
 const start = async () => {
   try {
     const { error } = await supabase.from("users").select("*").limit(1);
@@ -38,7 +44,7 @@ const start = async () => {
 
     console.log("Supabase connected");
 
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Server started on PORT: ${PORT}`);
     });
   } catch (err) {
