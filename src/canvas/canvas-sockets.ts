@@ -20,7 +20,6 @@ interface CanvasSocket extends Socket {
 
 const CANVAS_WIDTH = 1000;
 const CANVAS_HEIGHT = 1000;
-
 const canvasState: Record<string, IPixel> = {};
 
 const initCanvasSocket = (server: HttpServer) => {
@@ -62,7 +61,11 @@ const initCanvasSocket = (server: HttpServer) => {
   io.on("connection", async (socket: CanvasSocket) => {
     console.log("User connected:", socket.user?.email || socket.id);
 
-    const pixelsFromDb = await canvasService.getAllPixels();
+    const [pixelsFromDb, energyResult] = await Promise.all([
+      canvasService.getAllPixels(),
+      socket.user ? canvasService.getEnergy(socket.user.id) : null,
+    ]);
+
     pixelsFromDb.forEach((p) => {
       canvasState[`${p.x}:${p.y}`] = {
         x: p.x,
@@ -74,13 +77,12 @@ const initCanvasSocket = (server: HttpServer) => {
 
     socket.emit("canvasState", Object.values(canvasState));
 
-    if (socket.user) {
-      const result = await canvasService.getEnergy(socket.user.id);
+    if (energyResult) {
       socket.emit(
         "energyUpdate",
-        result.energy,
-        result.maxEnergy,
-        result.recoverySpeed,
+        energyResult.energy,
+        energyResult.maxEnergy,
+        energyResult.recoverySpeed,
       );
     }
 
@@ -99,7 +101,9 @@ const initCanvasSocket = (server: HttpServer) => {
         console.log(`[socket] Token refreshed for ${socket.user.email}`);
       } catch (err) {
         console.error("[socket] Invalid refreshed token:", err);
-        socket.emit("server_error", { message: "Invalid token after refresh" });
+        socket.emit("server_error", {
+          message: "Invalid token after refresh",
+        });
         socket.disconnect(true);
       }
     });
@@ -108,6 +112,7 @@ const initCanvasSocket = (server: HttpServer) => {
       "getEnergy",
       socketErrorMiddleware(async (_, callback) => {
         if (!socket.user) throw new Error("Unauthorized");
+
         const result = await canvasService.getEnergy(socket.user.id);
         callback(
           result.energy,
@@ -130,8 +135,10 @@ const initCanvasSocket = (server: HttpServer) => {
           ) => void,
         ) => {
           if (!socket.user) throw new Error("Unauthorized");
-          if (!pixels || !Array.isArray(pixels) || pixels.length === 0)
+
+          if (!pixels || !Array.isArray(pixels) || pixels.length === 0) {
             throw new Error("No pixels sent");
+          }
 
           for (const p of pixels) {
             if (
@@ -145,25 +152,23 @@ const initCanvasSocket = (server: HttpServer) => {
           }
 
           try {
-            const pixelsWithUserId: IPixel[] = [];
+            await canvasService.placePixelsBatch(socket.user.id, pixels);
 
-            for (const pixel of pixels) {
-              await canvasService.placePixel(socket.user.id, pixel);
-
+            const pixelsWithUserId: IPixel[] = pixels.map((pixel) => {
               const pixelWithUserId: IPixel = {
                 x: pixel.x,
                 y: pixel.y,
                 color: pixel.color,
-                userId: socket.user.id,
+                userId: socket.user!.id,
               };
-
-              pixelsWithUserId.push(pixelWithUserId);
               canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
-            }
+              return pixelWithUserId;
+            });
 
+            const energyResultPromise = canvasService.getEnergy(socket.user.id);
             io.emit("updatePixels", pixelsWithUserId);
+            const energyResult = await energyResultPromise;
 
-            const energyResult = await canvasService.getEnergy(socket.user.id);
             socket.emit(
               "energyUpdate",
               energyResult.energy,

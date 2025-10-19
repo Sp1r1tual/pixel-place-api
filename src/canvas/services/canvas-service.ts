@@ -1,6 +1,8 @@
 import type { IPixel, IEnergyResult } from "../../types/canvas.js";
 import type { IUserStats } from "../../types/shop.js";
+
 import { supabase } from "../../index.js";
+
 import { ApiError } from "../../shared/exceptions/api-error.js";
 import { CANVAS_ERRORS } from "../utils/errors/errors-messages.js";
 
@@ -51,10 +53,8 @@ class CanvasService {
         console.error("Error creating user_stats:", insertError);
         throw ApiError.BadRequest("Failed to create user stats");
       }
-
       return newStats;
     }
-
     return userStats;
   }
 
@@ -94,10 +94,8 @@ class CanvasService {
             `${CANVAS_ERRORS.dbError}: ${insertError.message}`,
           );
         }
-
         return newRow;
       }
-
       return data;
     } catch (err) {
       console.error("Error getting user energy row:", err);
@@ -160,57 +158,74 @@ class CanvasService {
     const recoveryInterval = this.calculateRecoveryIntervalSeconds(
       userStats.recoverySpeedLevel,
     );
-
     const elapsedSeconds = this.calculateElapsedSeconds(
       new Date(row.updated_at),
       now,
     );
-
     const regeneratedAmount = Math.floor(elapsedSeconds / recoveryInterval);
     const regeneratedEnergy = Math.min(
       row.energy + regeneratedAmount,
       maxEnergy,
     );
-
     const newEnergy = regeneratedEnergy - amount;
+
     if (newEnergy < 0) throw ApiError.Forbidden(CANVAS_ERRORS.notEnoughEnergy);
 
     await this.updateEnergyRow(userId, newEnergy, now);
-
     return { energy: newEnergy, maxEnergy };
+  }
+
+  public async placePixelsBatch(
+    userId: string,
+    pixels: IPixel[],
+  ): Promise<IEnergyResult & { currencyEarned: number }> {
+    pixels.forEach((pixel) => this.validatePixel(pixel));
+
+    const pixelCount = pixels.length;
+
+    const [userStats, energyResult] = await Promise.all([
+      this.getUserStats(userId),
+      this.useEnergy(userId, pixelCount),
+    ]);
+
+    const currencyReward =
+      this.calculatePixelReward(userStats.pixelRewardLevel) * pixelCount;
+
+    const pixelsToInsert = pixels.map((pixel) => ({
+      ...pixel,
+      user_id: userId,
+      placed_at: new Date().toISOString(),
+    }));
+
+    const [pixelsError, currencyError] = await Promise.allSettled([
+      supabase.from("pixels").upsert(pixelsToInsert, { onConflict: "x, y" }),
+      this.addCurrencyReward(userId, currencyReward),
+    ]);
+
+    if (pixelsError.status === "rejected" || pixelsError.value.error) {
+      const error =
+        pixelsError.status === "rejected"
+          ? pixelsError.reason
+          : pixelsError.value.error;
+      console.error("Supabase error [placePixelsBatch]:", error);
+      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
+    }
+
+    if (currencyError.status === "rejected") {
+      console.error("Currency update error:", currencyError.reason);
+    }
+
+    return {
+      ...energyResult,
+      currencyEarned: currencyReward,
+    };
   }
 
   public async placePixel(
     userId: string,
     pixel: IPixel,
   ): Promise<IEnergyResult & { currencyEarned: number }> {
-    this.validatePixel(pixel);
-
-    const userStats = await this.getUserStats(userId);
-    const currencyReward = this.calculatePixelReward(
-      userStats.pixelRewardLevel,
-    );
-
-    const energyResult = await this.useEnergy(userId, 1);
-
-    const { error } = await supabase
-      .from("pixels")
-      .upsert(
-        { ...pixel, user_id: userId, placed_at: new Date().toISOString() },
-        { onConflict: "x, y" },
-      );
-
-    if (error) {
-      console.error("Supabase error [placePixel]:", error);
-      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
-    }
-
-    await this.addCurrencyReward(userId, currencyReward);
-
-    return {
-      ...energyResult,
-      currencyEarned: currencyReward,
-    };
+    return this.placePixelsBatch(userId, [pixel]);
   }
 
   public async getAllPixels(): Promise<IPixel[]> {
@@ -233,19 +248,20 @@ class CanvasService {
 
   public async getEnergy(userId: string): Promise<IEnergyResultWithSpeed> {
     const now = new Date();
-    const row = await this.getUserEnergyRow(userId);
-    const userStats = await this.getUserStats(userId);
+
+    const [row, userStats] = await Promise.all([
+      this.getUserEnergyRow(userId),
+      this.getUserStats(userId),
+    ]);
 
     const maxEnergy = row.max_energy || this.DEFAULT_MAX_ENERGY;
     const recoveryIntervalSeconds = this.calculateRecoveryIntervalSeconds(
       userStats.recoverySpeedLevel,
     );
-
     const elapsedSeconds = this.calculateElapsedSeconds(
       new Date(row.updated_at),
       now,
     );
-
     const regeneratedAmount = Math.floor(
       elapsedSeconds / recoveryIntervalSeconds,
     );
