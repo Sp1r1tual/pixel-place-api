@@ -144,31 +144,47 @@ const initCanvasSocket = (server: HttpServer) => {
             }
           }
 
-          const pixelsWithUserId: IPixel[] = [];
+          try {
+            const pixelsWithUserId: IPixel[] = [];
 
-          for (const pixel of pixels) {
-            await canvasService.placePixel(socket.user.id, pixel);
-            const pixelWithUserId: IPixel = {
-              x: pixel.x,
-              y: pixel.y,
-              color: pixel.color,
-              userId: socket.user.id,
-            };
-            pixelsWithUserId.push(pixelWithUserId);
-            canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
+            for (const pixel of pixels) {
+              await canvasService.placePixel(socket.user.id, pixel);
+
+              const pixelWithUserId: IPixel = {
+                x: pixel.x,
+                y: pixel.y,
+                color: pixel.color,
+                userId: socket.user.id,
+              };
+
+              pixelsWithUserId.push(pixelWithUserId);
+              canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
+            }
+
+            io.emit("updatePixels", pixelsWithUserId);
+
+            const energyResult = await canvasService.getEnergy(socket.user.id);
+            socket.emit(
+              "energyUpdate",
+              energyResult.energy,
+              energyResult.maxEnergy,
+              energyResult.recoverySpeed,
+            );
+
+            callback?.(undefined, energyResult.energy, energyResult.maxEnergy);
+          } catch (err: unknown) {
+            console.error("[sendBatch] Error:", err);
+
+            if (err instanceof ApiError) {
+              callback?.(err.message);
+              socket.emit("server_error", { message: err.message });
+            } else {
+              callback?.("errors.something-went-wrong");
+              socket.emit("server_error", {
+                message: "errors.something-went-wrong",
+              });
+            }
           }
-
-          io.emit("updatePixels", pixelsWithUserId);
-
-          const energyResult = await canvasService.getEnergy(socket.user.id);
-          socket.emit(
-            "energyUpdate",
-            energyResult.energy,
-            energyResult.maxEnergy,
-            energyResult.recoverySpeed,
-          );
-
-          callback?.(undefined, energyResult.energy, energyResult.maxEnergy);
         },
       ),
     );
