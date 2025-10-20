@@ -14,8 +14,9 @@ interface IShopItemRecord {
 }
 
 class ShopService {
-  private priceMultiplier = 1.5;
-  private maxLevel = 10;
+  private priceMultiplier = 1.25;
+  private maxLevel = 12;
+
   private baseMaxEnergy = 10;
 
   async getShopItems(userId: string): Promise<IShopResponse> {
@@ -66,7 +67,7 @@ class ShopService {
           effectValue = this.baseMaxEnergy + level;
           break;
         case "recoverySpeed":
-          effectValue = Math.max(60 - level * 3, 30);
+          effectValue = Math.max(60 - level * 3, 24);
           break;
         case "pixelReward":
           effectValue = level + 1;
@@ -172,7 +173,7 @@ class ShopService {
         effectValue = this.baseMaxEnergy + newLevel;
         break;
       case "recoverySpeed":
-        effectValue = Math.max(60 - newLevel * 3, 30);
+        effectValue = Math.max(60 - newLevel * 3, 24);
         break;
       case "pixelReward":
         effectValue = newLevel + 1;

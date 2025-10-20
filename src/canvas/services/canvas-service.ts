@@ -13,10 +13,13 @@ interface IEnergyResultWithSpeed extends IEnergyResult {
 class CanvasService {
   private readonly DEFAULT_MAX_ENERGY = 10;
   private readonly BASE_RECOVERY_INTERVAL_SECONDS = 60;
-  private readonly MIN_RECOVERY_INTERVAL_SECONDS = 30;
+  private readonly MIN_RECOVERY_INTERVAL_SECONDS = 24;
 
   private calculateElapsedSeconds(lastUpdated: Date, now: Date): number {
-    return Math.floor((now.getTime() - lastUpdated.getTime()) / 1000);
+    return Math.max(
+      0,
+      Math.floor((now.getTime() - lastUpdated.getTime()) / 1000),
+    );
   }
 
   private calculateRecoveryIntervalSeconds(recoverySpeedLevel: number): number {
@@ -162,7 +165,10 @@ class CanvasService {
       new Date(row.updated_at),
       now,
     );
-    const regeneratedAmount = Math.floor(elapsedSeconds / recoveryInterval);
+    const regeneratedAmount = Math.max(
+      0,
+      Math.floor(elapsedSeconds / recoveryInterval),
+    );
     const regeneratedEnergy = Math.min(
       row.energy + regeneratedAmount,
       maxEnergy,
@@ -248,7 +254,6 @@ class CanvasService {
 
   public async getEnergy(userId: string): Promise<IEnergyResultWithSpeed> {
     const now = new Date();
-
     const [row, userStats] = await Promise.all([
       this.getUserEnergyRow(userId),
       this.getUserStats(userId),
@@ -262,16 +267,21 @@ class CanvasService {
       new Date(row.updated_at),
       now,
     );
-    const regeneratedAmount = Math.floor(
-      elapsedSeconds / recoveryIntervalSeconds,
+    const regeneratedAmount = Math.max(
+      0,
+      Math.floor(elapsedSeconds / recoveryIntervalSeconds),
     );
-    const regenerated = Math.min(row.energy + regeneratedAmount, maxEnergy);
+    const regeneratedEnergy = Math.min(
+      row.energy + regeneratedAmount,
+      maxEnergy,
+    );
 
-    if (regenerated !== row.energy)
-      await this.updateEnergyRow(userId, regenerated, now);
+    if (regeneratedEnergy !== row.energy) {
+      await this.updateEnergyRow(userId, regeneratedEnergy, now);
+    }
 
     return {
-      energy: regenerated,
+      energy: regeneratedEnergy,
       maxEnergy,
       recoverySpeed: recoveryIntervalSeconds,
     };
