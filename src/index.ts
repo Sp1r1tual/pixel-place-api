@@ -21,9 +21,17 @@ const PORT = process.env.PORT || 5000;
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = [process.env.CLIENT_URL, process.env.MAIL_SERVICE_URL];
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   }),
 );

@@ -4,13 +4,15 @@ import { IAuthPayload } from "../../types/auth.js";
 
 import { AuthService } from "../services/auth-service.js";
 
+import { ApiError } from "../../shared/exceptions/api-error.js";
+
 import { activationSuccessHTML } from "../views/activation-success.js";
 import { activationErrorHTML } from "../views/activation-fail.js";
 
 const authService = new AuthService();
 
 class AuthController {
-  private setRefreshTokenCookie = (res: Response, token: string): void => {
+  private setRefreshTokenCookie(res: Response, token: string) {
     res.cookie("refreshToken", token, {
       httpOnly: true,
       secure: true,
@@ -18,7 +20,7 @@ class AuthController {
       path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
-  };
+  }
 
   login = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -27,7 +29,7 @@ class AuthController {
 
       this.setRefreshTokenCookie(res, userData.refreshToken);
 
-      return res.json(userData);
+      res.json(userData);
     } catch (error) {
       next(error);
     }
@@ -36,14 +38,12 @@ class AuthController {
   logout = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { refreshToken } = req.cookies as { refreshToken?: string };
-      if (!refreshToken) {
-        return res.status(400).json({ message: "Refresh token is missing" });
-      }
 
-      const token = await authService.logout(refreshToken);
-      res.clearCookie("refreshToken");
+      if (!refreshToken) throw ApiError.BadRequest("Refresh token missing");
 
-      return res.json(token);
+      await authService.logout(refreshToken);
+
+      res.clearCookie("refreshToken").json({ message: "Logged out" });
     } catch (error) {
       next(error);
     }
@@ -56,7 +56,7 @@ class AuthController {
 
       this.setRefreshTokenCookie(res, userData.refreshToken);
 
-      return res.json(userData);
+      res.json(userData);
     } catch (error) {
       next(error);
     }
@@ -65,18 +65,19 @@ class AuthController {
   activate = async (req: Request, res: Response, next: NextFunction) => {
     try {
       await authService.activate(req.params.link);
-
       res
         .type("html")
         .send(activationSuccessHTML(`${process.env.CLIENT_URL}/login`));
     } catch (error) {
-      const errMsg =
-        error instanceof Error ? error.message : "Activation failed";
-
       res
         .status(400)
         .type("html")
-        .send(activationErrorHTML(`${process.env.CLIENT_URL}/login`, errMsg));
+        .send(
+          activationErrorHTML(
+            `${process.env.CLIENT_URL}/login`,
+            (error as Error).message,
+          ),
+        );
       next(error);
     }
   };
@@ -88,7 +89,7 @@ class AuthController {
 
       this.setRefreshTokenCookie(res, userData.refreshToken);
 
-      return res.json(userData);
+      res.json(userData);
     } catch (error) {
       next(error);
     }
@@ -97,12 +98,11 @@ class AuthController {
   forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email } = req.body;
-
       await authService.forgotPassword(email);
 
-      return res.json();
+      res.json({ message: "Reset link sent" });
     } catch (error) {
-      return next(error);
+      next(error);
     }
   };
 
@@ -113,9 +113,9 @@ class AuthController {
 
       await authService.resetPassword(token, password);
 
-      return res.json();
+      res.json({ message: "Password reset successfully" });
     } catch (error) {
-      return next(error);
+      next(error);
     }
   };
 }
