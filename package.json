@@ -1,12 +1,12 @@
 {
   "name": "pixel-place-api",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.js",
   "license": "MIT",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "nodemon",
+    "dev": "tsx --watch --trace-warnings --trace-uncaught src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src/ --fix",
@@ -21,15 +21,9 @@
       "prettier --write"
     ]
   },
-  "nodemonConfig": {
-    "watch": [
-      "src"
-    ],
-    "ext": "ts",
-    "exec": "node --loader ts-node/esm ./src/index.ts"
-  },
   "dependencies": {
     "@supabase/supabase-js": "^2.75.0",
+    "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -57,9 +51,9 @@
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.3",
-    "nodemon": "^3.1.10",
     "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
 }
