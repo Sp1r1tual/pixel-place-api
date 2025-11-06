@@ -31,6 +31,31 @@ const initCanvasSocket = (server: HttpServer) => {
     path: "/canvas/socket.io",
   });
 
+  const initializeCanvas = async () => {
+    try {
+      const pixelsFromDb = await canvasService.getAllPixels();
+
+      Object.keys(canvasState).forEach((key) => delete canvasState[key]);
+
+      pixelsFromDb.forEach((p) => {
+        canvasState[`${p.x}:${p.y}`] = {
+          x: p.x,
+          y: p.y,
+          color: p.color,
+          userId: p.userId,
+        };
+      });
+
+      console.log(
+        `[Canvas] Loaded ${pixelsFromDb.length} pixels from database`,
+      );
+    } catch (error) {
+      console.error("[Canvas] Failed to load initial state:", error);
+    }
+  };
+
+  initializeCanvas();
+
   io.use((socket: CanvasSocket, next) => {
     try {
       const authHeader = socket.handshake.auth?.authorization;
@@ -61,19 +86,9 @@ const initCanvasSocket = (server: HttpServer) => {
   io.on("connection", async (socket: CanvasSocket) => {
     console.log("User connected:", socket.user?.email || socket.id);
 
-    const [pixelsFromDb, energyResult] = await Promise.all([
-      canvasService.getAllPixels(),
-      socket.user ? canvasService.getEnergy(socket.user.id) : null,
-    ]);
-
-    pixelsFromDb.forEach((p) => {
-      canvasState[`${p.x}:${p.y}`] = {
-        x: p.x,
-        y: p.y,
-        color: p.color,
-        userId: p.userId,
-      };
-    });
+    const energyResult = socket.user
+      ? await canvasService.getEnergy(socket.user.id)
+      : null;
 
     socket.emit("canvasState", Object.values(canvasState));
 
@@ -161,6 +176,7 @@ const initCanvasSocket = (server: HttpServer) => {
                 color: pixel.color,
                 userId: socket.user!.id,
               };
+
               canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
               return pixelWithUserId;
             });
