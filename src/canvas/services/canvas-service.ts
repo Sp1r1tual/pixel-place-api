@@ -198,27 +198,28 @@ class CanvasService {
       this.calculatePixelReward(userStats.pixelRewardLevel) * pixelCount;
 
     const pixelsToInsert = pixels.map((pixel) => ({
-      ...pixel,
+      x: pixel.x,
+      y: pixel.y,
+      color: pixel.color,
       user_id: userId,
       placed_at: new Date().toISOString(),
     }));
 
-    const [pixelsError, currencyError] = await Promise.allSettled([
-      supabase.from("pixels").upsert(pixelsToInsert, { onConflict: "x, y" }),
-      this.addCurrencyReward(userId, currencyReward),
-    ]);
+    const { error: pixelsError } = await supabase
+      .from("pixels")
+      .upsert(pixelsToInsert, { onConflict: "x, y" });
 
-    if (pixelsError.status === "rejected" || pixelsError.value.error) {
-      const error =
-        pixelsError.status === "rejected"
-          ? pixelsError.reason
-          : pixelsError.value.error;
-      console.error("Supabase error [placePixelsBatch]:", error);
-      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
+    if (pixelsError) {
+      console.error("Supabase error [placePixelsBatch]:", pixelsError);
+      throw ApiError.BadRequest(
+        `${CANVAS_ERRORS.dbError}: ${pixelsError.message}`,
+      );
     }
 
-    if (currencyError.status === "rejected") {
-      console.error("Currency update error:", currencyError.reason);
+    try {
+      await this.addCurrencyReward(userId, currencyReward);
+    } catch (currencyError) {
+      console.error("Currency update error (non-critical):", currencyError);
     }
 
     return {
@@ -235,16 +236,43 @@ class CanvasService {
   }
 
   public async getAllPixels(): Promise<IPixel[]> {
-    const { data, error } = await supabase
-      .from("pixels")
-      .select("x, y, color, user_id");
-
-    if (error) {
-      console.error("Supabase error [getAllPixels]:", error);
-      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
+    interface PixelRow {
+      x: number;
+      y: number;
+      color: string;
+      user_id: string;
     }
 
-    return (data || []).map((p) => ({
+    let allPixels: PixelRow[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from("pixels")
+        .select("x, y, color, user_id")
+        .order("placed_at", { ascending: true })
+        .range(from, from + batchSize - 1);
+
+      if (error) {
+        console.error("Supabase error [getAllPixels]:", error);
+        throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
+      }
+
+      if (!data || data.length === 0) {
+        hasMore = false;
+      } else {
+        allPixels = allPixels.concat(data as PixelRow[]);
+        from += batchSize;
+
+        if (data.length < batchSize) {
+          hasMore = false;
+        }
+      }
+    }
+
+    return allPixels.map((p) => ({
       x: p.x,
       y: p.y,
       color: p.color,
