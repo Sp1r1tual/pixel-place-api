@@ -7,7 +7,8 @@ import { ApiError } from "../../shared/exceptions/api-error.js";
 import { CANVAS_ERRORS } from "../utils/errors/errors-messages.js";
 
 interface IEnergyResultWithSpeed extends IEnergyResult {
-  recoverySpeed?: number;
+  recoverySpeed: number;
+  updatedAt: string;
 }
 
 class CanvasService {
@@ -304,6 +305,9 @@ class CanvasService {
       maxEnergy,
     );
 
+    const finalUpdatedAt =
+      regeneratedEnergy !== row.energy ? now : new Date(row.updated_at);
+
     if (regeneratedEnergy !== row.energy) {
       await this.updateEnergyRow(userId, regeneratedEnergy, now);
     }
@@ -312,6 +316,7 @@ class CanvasService {
       energy: regeneratedEnergy,
       maxEnergy,
       recoverySpeed: recoveryIntervalSeconds,
+      updatedAt: finalUpdatedAt.toISOString(),
     };
   }
 }

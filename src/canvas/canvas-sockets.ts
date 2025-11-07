@@ -98,6 +98,7 @@ const initCanvasSocket = (server: HttpServer) => {
         energyResult.energy,
         energyResult.maxEnergy,
         energyResult.recoverySpeed,
+        energyResult.updatedAt,
       );
     }
 
@@ -133,7 +134,7 @@ const initCanvasSocket = (server: HttpServer) => {
           result.energy,
           result.maxEnergy,
           result.recoverySpeed,
-          new Date().toISOString(),
+          result.updatedAt,
         );
       }),
     );
@@ -190,6 +191,7 @@ const initCanvasSocket = (server: HttpServer) => {
               energyResult.energy,
               energyResult.maxEnergy,
               energyResult.recoverySpeed,
+              energyResult.updatedAt,
             );
 
             callback?.(undefined, energyResult.energy, energyResult.maxEnergy);
