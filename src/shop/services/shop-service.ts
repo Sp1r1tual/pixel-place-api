@@ -194,6 +194,7 @@ class ShopService {
       updatedStat: newLevel,
       currency: newCurrency,
       effectValue,
+      recoverySpeed: itemType === "recoverySpeed" ? effectValue : undefined,
     };
   }
 }
