@@ -8,8 +8,8 @@ interface IShopItemRecord {
   id: string;
   name: string;
   type: "energyLimit" | "recoverySpeed" | "pixelReward";
-  basePrice: number;
-  maxLevel: number;
+  baseprice: number;
+  maxlevel: number;
   image_url: string;
 }
 
@@ -58,7 +58,7 @@ class ShopService {
     const items = (shopDefaults as IShopItemRecord[]).map((item) => {
       const level = userStats[`${item.type}Level`] || 0;
       const price = Math.floor(
-        item.basePrice * Math.pow(this.priceMultiplier, level),
+        item.baseprice * Math.pow(this.priceMultiplier, level),
       );
 
       let effectValue: number;
@@ -105,6 +105,10 @@ class ShopService {
     if (statsError || !userStats)
       throw ApiError.BadRequest("shop.user-stats-not-found");
 
+    if (userStats.currency == null) {
+      throw ApiError.BadRequest("shop.invalid-currency-state");
+    }
+
     const currentLevel = userStats[`${itemType}Level`] || 0;
 
     if (currentLevel >= this.maxLevel)
@@ -120,14 +124,16 @@ class ShopService {
       throw ApiError.BadRequest("shop.shop-item-not-found");
 
     const price = Math.floor(
-      shopItem.basePrice * Math.pow(this.priceMultiplier, currentLevel),
+      Number(shopItem.baseprice) * Math.pow(this.priceMultiplier, currentLevel),
     );
 
     if (userStats.currency < price)
       throw ApiError.BadRequest("shop.not-enough-currency");
 
+    const newCurrency = userStats.currency - price;
+
     const updateData: Partial<IUserStats> = {
-      currency: userStats.currency - price,
+      currency: newCurrency,
       [`${itemType}Level`]: currentLevel + 1,
     };
 
@@ -162,9 +168,13 @@ class ShopService {
     const { error: updateError } = await supabase
       .from("user_stats")
       .update(updateData)
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .select()
+      .single();
 
-    if (updateError) throw ApiError.BadRequest(updateError.message);
+    if (updateError) {
+      throw ApiError.BadRequest(updateError.message);
+    }
 
     let effectValue: number;
     const newLevel = currentLevel + 1;
@@ -182,7 +192,7 @@ class ShopService {
 
     return {
       updatedStat: newLevel,
-      currency: userStats.currency - price,
+      currency: newCurrency,
       effectValue,
     };
   }
