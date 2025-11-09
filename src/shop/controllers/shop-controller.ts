@@ -36,6 +36,7 @@ class ShopController {
         success: true,
         updatedStat: result.updatedStat,
         currency: result.currency,
+        recoverySpeed: result.recoverySpeed,
       });
     } catch (error) {
       next(error);
