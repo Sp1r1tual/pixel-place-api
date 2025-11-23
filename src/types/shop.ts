@@ -1,15 +1,15 @@
 export interface IUserStats {
   user_id: string;
   currency: number;
-  energyLimitLevel: number;
-  recoverySpeedLevel: number;
-  pixelRewardLevel: number;
+  energy_limit_level: number;
+  recovery_speed_level: number;
+  pixel_reward_level: number;
 }
 
 export interface IShopItem {
   id: string;
   name: string;
-  type: "energyLimit" | "recoverySpeed" | "pixelReward";
+  type: "energy_limit" | "recovery_speed" | "pixel_reward";
   level: number;
   maxLevel: number;
   price: number;

@@ -29,7 +29,7 @@ class ShopController {
 
       const result = await shopService.upgradeItem(
         userId,
-        statId as "energyLimit" | "recoverySpeed" | "pixelReward",
+        statId as "energy_limit" | "recovery_speed" | "pixel_reward",
       );
 
       return res.json({

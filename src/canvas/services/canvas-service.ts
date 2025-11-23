@@ -46,9 +46,9 @@ class CanvasService {
         .insert({
           user_id: userId,
           currency: 0,
-          energyLimitLevel: 0,
-          recoverySpeedLevel: 0,
-          pixelRewardLevel: 0,
+          energy_limit_level: 0,
+          recovery_speed_level: 0,
+          pixel_reward_level: 0,
         })
         .select("*")
         .single<IUserStats>();
@@ -160,7 +160,7 @@ class CanvasService {
 
     const maxEnergy = row.max_energy || this.DEFAULT_MAX_ENERGY;
     const recoveryInterval = this.calculateRecoveryIntervalSeconds(
-      userStats.recoverySpeedLevel,
+      userStats.recovery_speed_level,
     );
     const elapsedSeconds = this.calculateElapsedSeconds(
       new Date(row.updated_at),
@@ -196,7 +196,7 @@ class CanvasService {
     ]);
 
     const currencyReward =
-      this.calculatePixelReward(userStats.pixelRewardLevel) * pixelCount;
+      this.calculatePixelReward(userStats.pixel_reward_level) * pixelCount;
 
     const pixelsToInsert = pixels.map((pixel) => ({
       x: pixel.x,
@@ -220,7 +220,7 @@ class CanvasService {
     try {
       await this.addCurrencyReward(userId, currencyReward);
     } catch (currencyError) {
-      console.error("Currency update error (non-critical):", currencyError);
+      console.error("Currency update error:", currencyError);
     }
 
     return {
@@ -290,7 +290,7 @@ class CanvasService {
 
     const maxEnergy = row.max_energy || this.DEFAULT_MAX_ENERGY;
     const recoveryIntervalSeconds = this.calculateRecoveryIntervalSeconds(
-      userStats.recoverySpeedLevel,
+      userStats.recovery_speed_level,
     );
     const elapsedSeconds = this.calculateElapsedSeconds(
       new Date(row.updated_at),
