@@ -5,6 +5,7 @@ import { supabase } from "../../index.js";
 
 import { ApiError } from "../../shared/exceptions/api-error.js";
 import { CANVAS_ERRORS } from "../utils/errors/errors-messages.js";
+import { formatDateTime } from "../../shared/utils/format-date.js";
 
 interface IEnergyResultWithSpeed extends IEnergyResult {
   recoverySpeed: number;
@@ -242,6 +243,7 @@ class CanvasService {
       y: number;
       color: string;
       user_id: string;
+      placed_at: string;
     }
 
     let allPixels: PixelRow[] = [];
@@ -252,7 +254,7 @@ class CanvasService {
     while (hasMore) {
       const { data, error } = await supabase
         .from("pixels")
-        .select("x, y, color, user_id")
+        .select("x, y, color, user_id, placed_at")
         .order("placed_at", { ascending: true })
         .range(from, from + batchSize - 1);
 
@@ -278,6 +280,7 @@ class CanvasService {
       y: p.y,
       color: p.color,
       userId: p.user_id,
+      placedAt: formatDateTime(p.placed_at),
     }));
   }
 

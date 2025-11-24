@@ -1,12 +1,13 @@
 import bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 import jwt from "jsonwebtoken";
-import axios from "axios";
 
 import { IAuthPayload } from "../../types/auth.js";
 
 import { supabase } from "../../index.js";
 import { UserDto } from "../../shared/dto/userDto.js";
+
+import { EmailService } from "./email-service.js";
 
 import { ApiError } from "../../shared/exceptions/api-error.js";
 import { AUTH_ERRORS } from "../utils/errors/errors-messages.js";
@@ -17,15 +18,6 @@ interface ITokens {
 }
 
 class AuthService {
-  private getMailServiceUrl(): string {
-    const url = process.env.MAIL_SERVICE_URL;
-    if (!url)
-      throw new Error(
-        "MAIL_SERVICE_URL is not defined in environment variables",
-      );
-    return url;
-  }
-
   private generateTokens(payload: object): ITokens {
     const accessSecret = process.env.JWT_ACCESS_SECRET;
     const refreshSecret = process.env.JWT_REFRESH_SECRET;
@@ -62,14 +54,18 @@ class AuthService {
     if (insertError) throw insertError;
   }
 
-  private async sendActivationMail(email: string, link: string) {
-    const mailServiceUrl = this.getMailServiceUrl();
-    await axios.post(`${mailServiceUrl}/activation`, { email, link });
-  }
+  private async deleteUser(userId: string): Promise<void> {
+    try {
+      const { error } = await supabase.from("users").delete().eq("id", userId);
 
-  private async sendResetPasswordMail(email: string, link: string) {
-    const mailServiceUrl = this.getMailServiceUrl();
-    await axios.post(`${mailServiceUrl}/reset`, { email, link });
+      if (error) {
+        console.error("Error deleting user:", error);
+      } else {
+        console.log(`User ${userId} deleted successfully`);
+      }
+    } catch (error) {
+      console.error("Exception while deleting user:", error);
+    }
   }
 
   public validateAccessToken(token: string) {
@@ -132,13 +128,29 @@ class AuthService {
       })
       .select("*")
       .single();
-    if (error || !user)
-      throw ApiError.BadRequest(AUTH_ERRORS.registrationFailed);
 
-    await this.sendActivationMail(
-      email,
-      `${process.env.API_URL}/activate/${activationLink}`,
-    );
+    if (error || !user) {
+      throw ApiError.BadRequest(AUTH_ERRORS.registrationFailed);
+    }
+
+    try {
+      const emailService = new EmailService();
+      await emailService.sendActivationMail(
+        email,
+        `${process.env.API_URL}/activate/${activationLink}`,
+        2,
+      );
+    } catch (emailError) {
+      console.error(
+        `Failed to send activation email, deleting user... ${emailError}`,
+      );
+
+      await this.deleteUser(user.id);
+
+      throw ApiError.BadRequest(
+        "Failed to send activation email. Please try registering again later.",
+      );
+    }
 
     const userDto = new UserDto(user);
     const tokens = this.generateTokens({ ...userDto });
@@ -215,16 +227,36 @@ class AuthService {
     if (error || !user) throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
 
     const resetToken = uuidv4();
-    await supabase.from("reset_tokens").insert({
+
+    const { error: insertError } = await supabase.from("reset_tokens").insert({
       user_id: user.id,
       reset_token: resetToken,
       created_at: new Date().toISOString(),
     });
 
-    await this.sendResetPasswordMail(
-      email,
-      `${process.env.CLIENT_URL}/reset-password/${resetToken}`,
-    );
+    if (insertError) {
+      throw ApiError.BadRequest("Failed to create reset token");
+    }
+
+    try {
+      const emailService = new EmailService();
+      await emailService.sendResetPasswordMail(
+        email,
+        `${process.env.CLIENT_URL}/reset-password/${resetToken}`,
+        2,
+      );
+    } catch (emailError) {
+      console.error(`Failed to send reset password email... ${emailError}`);
+
+      await supabase
+        .from("reset_tokens")
+        .delete()
+        .eq("reset_token", resetToken);
+
+      throw ApiError.BadRequest(
+        "Failed to send reset password email. Please try again later.",
+      );
+    }
   }
 
   public async resetPassword(
