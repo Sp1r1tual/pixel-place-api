@@ -10,6 +10,7 @@ import { AuthService } from "../auth/services/auth-service.js";
 import { CanvasService } from "./services/canvas-service.js";
 
 import { ApiError } from "../shared/exceptions/api-error.js";
+import { formatDateTime } from "../shared/utils/format-date.js";
 
 const authService = new AuthService();
 const canvasService = new CanvasService();
@@ -43,6 +44,7 @@ const initCanvasSocket = (server: HttpServer) => {
           y: p.y,
           color: p.color,
           userId: p.userId,
+          placedAt: p.placedAt,
         };
       });
 
@@ -170,12 +172,16 @@ const initCanvasSocket = (server: HttpServer) => {
           try {
             await canvasService.placePixelsBatch(socket.user.id, pixels);
 
+            const isoDate = new Date().toISOString();
+            const placedAt = formatDateTime(isoDate);
+
             const pixelsWithUserId: IPixel[] = pixels.map((pixel) => {
               const pixelWithUserId: IPixel = {
                 x: pixel.x,
                 y: pixel.y,
                 color: pixel.color,
                 userId: socket.user!.id,
+                placedAt: placedAt,
               };
 
               canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
