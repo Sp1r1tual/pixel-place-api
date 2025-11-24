@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 
 import { IAuthRequest } from "../../types/auth.js";
-
 import { ProfileService } from "../services/profile-service.js";
+import { uploadAvatarToCloudinary } from "../utils/upload-avatar.js";
 
 const profileService = new ProfileService();
 
@@ -45,7 +45,14 @@ class ProfileController {
       const authReq = req as IAuthRequest;
       const userId = authReq.user?.id;
 
-      const { username, bio, avatarSrc } = req.body;
+      const { username, bio } = req.body;
+      const file = req.file;
+
+      let avatarSrc: string | undefined;
+
+      if (file) {
+        avatarSrc = await uploadAvatarToCloudinary(file.buffer, userId);
+      }
 
       const updatedProfile = await profileService.updateProfile(userId, {
         username,

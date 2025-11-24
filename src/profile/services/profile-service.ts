@@ -8,6 +8,7 @@ import { supabase } from "../../index.js";
 import { ApiError } from "../../shared/exceptions/api-error.js";
 
 import { formatDate } from "../../shared/utils/format-date.js";
+import { deleteOldAvatarIfNeeded } from "../utils/delete-old-user-avatar.js";
 
 class ProfileService {
   private readonly MAX_LEVEL = 100;
@@ -169,23 +170,20 @@ class ProfileService {
     userId: string,
     updates: IUpdateProfilePayload,
   ): Promise<IProfileData> {
-    if (!userId) {
-      throw ApiError.UnauthorizedError();
-    }
+    if (!userId) throw ApiError.UnauthorizedError();
 
-    await this.ensureUserProfile(userId);
+    const current = await this.ensureUserProfile(userId);
+
+    if (updates.avatarSrc && current.avatar_src) {
+      await deleteOldAvatarIfNeeded(current.avatar_src, updates.avatarSrc);
+    }
 
     const updateData: Record<string, string | null> = {};
 
-    if (updates.username !== undefined) {
-      updateData.username = updates.username;
-    }
-    if (updates.bio !== undefined) {
-      updateData.bio = updates.bio;
-    }
-    if (updates.avatarSrc !== undefined) {
+    if (updates.username !== undefined) updateData.username = updates.username;
+    if (updates.bio !== undefined) updateData.bio = updates.bio;
+    if (updates.avatarSrc !== undefined)
       updateData.avatar_src = updates.avatarSrc;
-    }
 
     const { data: updatedProfile, error } = await supabase
       .from("user_profiles")
