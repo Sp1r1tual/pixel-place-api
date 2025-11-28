@@ -19,7 +19,6 @@ class AuthService {
 
     this.client = axios.create({
       baseURL: authApiUrl,
-      timeout: 5000,
     });
   }
 
