@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 5000;
 const app = express();
 const server = http.createServer(app);
 
-const allowedOrigins = [process.env.CLIENT_URL, process.env.MAIL_SERVICE_URL];
+const allowedOrigins = [process.env.CLIENT_URL];
 
 app.use(
   cors({
@@ -60,3 +60,5 @@ const start = async () => {
 };
 
 start();
+
+export default app;
