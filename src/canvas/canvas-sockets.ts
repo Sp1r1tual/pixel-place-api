@@ -1,18 +1,14 @@
 import { Server as IOServer, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 
-import { ITokenPayload } from "../types/auth.js";
 import { IPixel } from "../types/canvas.js";
 
 import { socketErrorMiddleware } from "./middlewares/socket-error-middleware.js";
-
-import { AuthService } from "../auth/services/auth-service.js";
+import { authService } from "../auth/services/auth-service.js";
 import { CanvasService } from "./services/canvas-service.js";
-
 import { ApiError } from "../shared/exceptions/api-error.js";
 import { formatDateTime } from "../shared/utils/format-date.js";
 
-const authService = new AuthService();
 const canvasService = new CanvasService();
 
 interface CanvasSocket extends Socket {
@@ -58,7 +54,7 @@ const initCanvasSocket = (server: HttpServer) => {
 
   initializeCanvas();
 
-  io.use((socket: CanvasSocket, next) => {
+  io.use(async (socket: CanvasSocket, next) => {
     try {
       const authHeader = socket.handshake.auth?.authorization;
       if (!authHeader) return next(ApiError.UnauthorizedError());
@@ -66,22 +62,14 @@ const initCanvasSocket = (server: HttpServer) => {
       const token = authHeader.split(" ")[1];
       if (!token) return next(ApiError.UnauthorizedError());
 
-      const payload = authService.validateAccessToken(token) as ITokenPayload;
-      if (!payload?.exp) return next(ApiError.UnauthorizedError());
+      const userData = await authService.validateAccessToken(token);
 
-      socket.user = { id: payload.id, email: payload.email };
-
-      const msToExpire = payload.exp * 1000 - Date.now();
-      if (msToExpire > 0) {
-        setTimeout(() => {
-          socket.emit("token_expired");
-        }, msToExpire);
-      }
+      socket.user = { id: userData.id, email: userData.email };
 
       next();
     } catch (err) {
-      console.error("Auth middleware error:", err);
-      next(ApiError.UnauthorizedError());
+      console.error("Socket auth middleware error:", err);
+      next(err instanceof ApiError ? err : ApiError.UnauthorizedError());
     }
   });
 
@@ -104,17 +92,10 @@ const initCanvasSocket = (server: HttpServer) => {
       );
     }
 
-    socket.on("token_refresh", (newToken: string) => {
+    socket.on("token_refresh", async (newToken: string) => {
       try {
-        const payload = authService.validateAccessToken(
-          newToken,
-        ) as ITokenPayload;
-        socket.user = { id: payload.id, email: payload.email };
-
-        const msToExpire = payload.exp * 1000 - Date.now();
-        if (msToExpire > 0) {
-          setTimeout(() => socket.emit("token_expired"), msToExpire);
-        }
+        const userData = await authService.validateAccessToken(newToken);
+        socket.user = { id: userData.id, email: userData.email };
 
         console.log(`[socket] Token refreshed for ${socket.user.email}`);
       } catch (err) {

@@ -49,6 +49,10 @@ class ApiError extends Error {
   static PayloadTooLarge(message = "Payload too large") {
     return new ApiError(413, message);
   }
+
+  static ServiceUnavailable(message = "Service unavailable") {
+    return new ApiError(503, message);
+  }
 }
 
 export { ApiError };
