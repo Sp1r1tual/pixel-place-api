@@ -57,19 +57,27 @@ const initCanvasSocket = (server: HttpServer) => {
   io.use(async (socket: CanvasSocket, next) => {
     try {
       const authHeader = socket.handshake.auth?.authorization;
-      if (!authHeader) return next(ApiError.UnauthorizedError());
+      if (!authHeader) {
+        return next(new Error("Unauthorized: No authorization header"));
+      }
 
       const token = authHeader.split(" ")[1];
-      if (!token) return next(ApiError.UnauthorizedError());
+      if (!token) {
+        return next(new Error("Unauthorized: No token provided"));
+      }
 
       const userData = await authService.validateAccessToken(token);
-
       socket.user = { id: userData.id, email: userData.email };
 
       next();
     } catch (err) {
       console.error("Socket auth middleware error:", err);
-      next(err instanceof ApiError ? err : ApiError.UnauthorizedError());
+
+      if (err instanceof ApiError) {
+        return next(new Error(err.message));
+      }
+
+      next(new Error("Unauthorized"));
     }
   });
 
@@ -98,6 +106,8 @@ const initCanvasSocket = (server: HttpServer) => {
         socket.user = { id: userData.id, email: userData.email };
 
         console.log(`[socket] Token refreshed for ${socket.user.email}`);
+
+        socket.emit("token_refreshed");
       } catch (err) {
         console.error("[socket] Invalid refreshed token:", err);
         socket.emit("server_error", {
