@@ -1,21 +1,26 @@
-import type { IPixel, IEnergyResult } from "../../types/canvas.js";
-import type { IUserStats } from "../../types/shop.js";
+import type {
+  IEnergyResultWithSpeed,
+  IPixel,
+  IEnergyResult,
+  IUserStats,
+  IPixelRow,
+} from "../../types/index.js";
 
-import { supabase } from "../../index.js";
+import { CanvasModel } from "../models/canvas-model.js";
 
 import { ApiError } from "../../shared/exceptions/api-error.js";
 import { CANVAS_ERRORS } from "../utils/errors/errors-messages.js";
 import { formatDateTime } from "../../shared/utils/format-date.js";
 
-interface IEnergyResultWithSpeed extends IEnergyResult {
-  recoverySpeed: number;
-  updatedAt: string;
-}
-
 class CanvasService {
   private readonly DEFAULT_MAX_ENERGY = 10;
   private readonly BASE_RECOVERY_INTERVAL_SECONDS = 60;
   private readonly MIN_RECOVERY_INTERVAL_SECONDS = 24;
+  private readonly canvasModel: CanvasModel;
+
+  constructor() {
+    this.canvasModel = new CanvasModel();
+  }
 
   private calculateElapsedSeconds(lastUpdated: Date, now: Date): number {
     return Math.max(
@@ -35,30 +40,15 @@ class CanvasService {
   }
 
   private async ensureUserStats(userId: string): Promise<IUserStats> {
-    const { data: userStats, error } = await supabase
-      .from("user_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .single<IUserStats>();
+    let userStats = await this.canvasModel.findUserStats(userId);
 
-    if (error || !userStats) {
-      const { data: newStats, error: insertError } = await supabase
-        .from("user_stats")
-        .insert({
-          user_id: userId,
-          currency: 0,
-          energy_limit_level: 0,
-          recovery_speed_level: 0,
-          pixel_reward_level: 0,
-        })
-        .select("*")
-        .single<IUserStats>();
-
-      if (insertError || !newStats) {
-        console.error("Error creating user_stats:", insertError);
+    if (!userStats) {
+      try {
+        userStats = await this.canvasModel.createUserStats(userId);
+      } catch (error) {
+        console.error("Error creating user_stats:", error);
         throw ApiError.BadRequest("Failed to create user stats");
       }
-      return newStats;
     }
     return userStats;
   }
@@ -69,39 +59,18 @@ class CanvasService {
 
   private async getUserEnergyRow(userId: string) {
     try {
-      const { data, error } = await supabase
-        .from("user_energy")
-        .select("*")
-        .eq("user_id", userId)
-        .limit(1)
-        .single();
+      let energyRow = await this.canvasModel.findUserEnergy(userId);
 
-      if (error && error.code !== "PGRST116") {
-        console.error("Supabase error [getUserEnergyRow]:", error);
-      }
-
-      if (!data) {
+      if (!energyRow) {
         const now = new Date();
-        const { data: newRow, error: insertError } = await supabase
-          .from("user_energy")
-          .insert({
-            user_id: userId,
-            energy: this.DEFAULT_MAX_ENERGY,
-            max_energy: this.DEFAULT_MAX_ENERGY,
-            updated_at: now.toISOString(),
-          })
-          .select("*")
-          .single();
-
-        if (insertError) {
-          console.error("Supabase error [insertUserEnergyRow]:", insertError);
-          throw ApiError.BadRequest(
-            `${CANVAS_ERRORS.dbError}: ${insertError.message}`,
-          );
-        }
-        return newRow;
+        energyRow = await this.canvasModel.createUserEnergy(
+          userId,
+          this.DEFAULT_MAX_ENERGY,
+          this.DEFAULT_MAX_ENERGY,
+          now.toISOString(),
+        );
       }
-      return data;
+      return energyRow;
     } catch (err) {
       console.error("Error getting user energy row:", err);
       throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${err}`);
@@ -113,12 +82,7 @@ class CanvasService {
     energy: number,
     now: Date,
   ): Promise<void> {
-    const { error } = await supabase
-      .from("user_energy")
-      .update({ energy, updated_at: now.toISOString() })
-      .eq("user_id", userId);
-
-    if (error) console.error("Supabase error [updateEnergyRow]:", error);
+    await this.canvasModel.updateUserEnergy(userId, energy, now.toISOString());
   }
 
   private validatePixel(pixel: IPixel): void {
@@ -137,12 +101,12 @@ class CanvasService {
     amount: number,
   ): Promise<void> {
     const userStats = await this.ensureUserStats(userId);
-    const { error } = await supabase
-      .from("user_stats")
-      .update({ currency: userStats.currency + amount })
-      .eq("user_id", userId);
-
-    if (error) {
+    try {
+      await this.canvasModel.updateUserCurrency(
+        userId,
+        userStats.currency + amount,
+      );
+    } catch (error) {
       console.error("Error updating currency:", error);
       throw ApiError.BadRequest("Failed to update currency");
     }
@@ -207,15 +171,11 @@ class CanvasService {
       placed_at: new Date().toISOString(),
     }));
 
-    const { error: pixelsError } = await supabase
-      .from("pixels")
-      .upsert(pixelsToInsert, { onConflict: "x, y" });
-
-    if (pixelsError) {
-      console.error("Supabase error [placePixelsBatch]:", pixelsError);
-      throw ApiError.BadRequest(
-        `${CANVAS_ERRORS.dbError}: ${pixelsError.message}`,
-      );
+    try {
+      await this.canvasModel.upsertPixels(pixelsToInsert);
+    } catch (error) {
+      console.error("Error placing pixels:", error);
+      throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error}`);
     }
 
     try {
@@ -238,40 +198,28 @@ class CanvasService {
   }
 
   public async getAllPixels(): Promise<IPixel[]> {
-    interface PixelRow {
-      x: number;
-      y: number;
-      color: string;
-      user_id: string;
-      placed_at: string;
-    }
-
-    let allPixels: PixelRow[] = [];
+    let allPixels: IPixelRow[] = [];
     let from = 0;
     const batchSize = 1000;
     let hasMore = true;
 
     while (hasMore) {
-      const { data, error } = await supabase
-        .from("pixels")
-        .select("x, y, color, user_id, placed_at")
-        .order("placed_at", { ascending: true })
-        .range(from, from + batchSize - 1);
+      try {
+        const data = await this.canvasModel.getAllPixels(from, batchSize);
 
-      if (error) {
-        console.error("Supabase error [getAllPixels]:", error);
-        throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error.message}`);
-      }
-
-      if (!data || data.length === 0) {
-        hasMore = false;
-      } else {
-        allPixels = allPixels.concat(data as PixelRow[]);
-        from += batchSize;
-
-        if (data.length < batchSize) {
+        if (!data || data.length === 0) {
           hasMore = false;
+        } else {
+          allPixels = allPixels.concat(data);
+          from += batchSize;
+
+          if (data.length < batchSize) {
+            hasMore = false;
+          }
         }
+      } catch (error) {
+        console.error("Error fetching pixels:", error);
+        throw ApiError.BadRequest(`${CANVAS_ERRORS.dbError}: ${error}`);
       }
     }
 

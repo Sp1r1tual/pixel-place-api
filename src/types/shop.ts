@@ -21,3 +21,27 @@ export interface IShopResponse {
   items: IShopItem[];
   currency: number;
 }
+
+export interface IShopItemRecord {
+  id: string;
+  name: string;
+  type: "energy_limit" | "recovery_speed" | "pixel_reward";
+  base_price: number;
+  max_level: number;
+  image_url: string;
+}
+
+export interface IUserEnergy {
+  id: string;
+  user_id: string;
+  energy: number;
+  max_energy: number;
+  updated_at: string;
+}
+
+export type ItemType = "energy_limit" | "recovery_speed" | "pixel_reward";
+
+export type StatLevelKey =
+  | "energy_limit_level"
+  | "recovery_speed_level"
+  | "pixel_reward_level";

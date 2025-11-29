@@ -1,26 +1,23 @@
-import type { IUserStats, IShopResponse } from "../../types/shop.js";
-import { supabase } from "../../index.js";
+import type {
+  IUserStats,
+  IShopResponse,
+  ItemType,
+  StatLevelKey,
+} from "../../types/index.js";
+
+import { ShopModel } from "../models/shop-model.js";
+
 import { ApiError } from "../../shared/exceptions/api-error.js";
-
-interface IShopItemRecord {
-  id: string;
-  name: string;
-  type: "energy_limit" | "recovery_speed" | "pixel_reward";
-  base_price: number;
-  max_level: number;
-  image_url: string;
-}
-
-type ItemType = "energy_limit" | "recovery_speed" | "pixel_reward";
-type StatLevelKey =
-  | "energy_limit_level"
-  | "recovery_speed_level"
-  | "pixel_reward_level";
 
 class ShopService {
   private priceMultiplier = 1.25;
   private maxLevel = 12;
   private baseMaxEnergy = 10;
+  private readonly shopModel: ShopModel;
+
+  constructor() {
+    this.shopModel = new ShopModel();
+  }
 
   private getStatKey(itemType: ItemType): StatLevelKey {
     const mapping: Record<ItemType, StatLevelKey> = {
@@ -31,61 +28,50 @@ class ShopService {
     return mapping[itemType];
   }
 
-  async getShopItems(userId: string): Promise<IShopResponse> {
-    const { data: userStatsArr, error: statsError } = await supabase
-      .from("user_stats")
-      .select("*")
-      .eq("user_id", userId);
+  private calculatePrice(basePrice: number, currentLevel: number): number {
+    return Math.floor(basePrice * Math.pow(this.priceMultiplier, currentLevel));
+  }
 
-    let userStats = userStatsArr?.[0];
+  private calculateEffectValue(itemType: ItemType, level: number): number {
+    switch (itemType) {
+      case "energy_limit":
+        return this.baseMaxEnergy + level;
+      case "recovery_speed":
+        return Math.max(60 - level * 3, 24);
+      case "pixel_reward":
+        return level + 1;
+    }
+  }
+
+  private async ensureUserStats(userId: string): Promise<IUserStats> {
+    let userStats = await this.shopModel.findUserStats(userId);
 
     if (!userStats) {
-      const { data: newStats, error: insertError } = await supabase
-        .from("user_stats")
-        .insert({
-          user_id: userId,
-          currency: 0,
-          energy_limit_level: 0,
-          recovery_speed_level: 0,
-          pixel_reward_level: 0,
-        })
-        .select()
-        .single<IUserStats>();
-
-      if (insertError || !newStats)
+      try {
+        userStats = await this.shopModel.createUserStats(userId);
+      } catch {
         throw ApiError.BadRequest("shop.user-stats-not-found");
-
-      userStats = newStats;
+      }
     }
 
-    if (statsError) throw ApiError.BadRequest(statsError.message);
+    return userStats;
+  }
 
-    const { data: shopDefaults, error: shopError } = await supabase
-      .from("shop_items")
-      .select("*");
+  async getShopItems(userId: string): Promise<IShopResponse> {
+    const userStats = await this.ensureUserStats(userId);
 
-    if (shopError || !shopDefaults)
+    let shopDefaults;
+    try {
+      shopDefaults = await this.shopModel.getAllShopItems();
+    } catch {
       throw ApiError.BadRequest("shop.cannot-fetch");
+    }
 
-    const items = (shopDefaults as IShopItemRecord[]).map((item) => {
+    const items = shopDefaults.map((item) => {
       const statKey = this.getStatKey(item.type);
       const level = userStats[statKey] || 0;
-      const price = Math.floor(
-        item.base_price * Math.pow(this.priceMultiplier, level),
-      );
-
-      let effectValue: number;
-      switch (item.type) {
-        case "energy_limit":
-          effectValue = this.baseMaxEnergy + level;
-          break;
-        case "recovery_speed":
-          effectValue = Math.max(60 - level * 3, 24);
-          break;
-        case "pixel_reward":
-          effectValue = level + 1;
-          break;
-      }
+      const price = this.calculatePrice(item.base_price, level);
+      const effectValue = this.calculateEffectValue(item.type, level);
 
       return {
         id: item.id,
@@ -106,14 +92,11 @@ class ShopService {
   }
 
   async upgradeItem(userId: string, itemType: ItemType) {
-    const { data: userStats, error: statsError } = await supabase
-      .from("user_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .single<IUserStats>();
+    const userStats = await this.shopModel.findUserStats(userId);
 
-    if (statsError || !userStats)
+    if (!userStats) {
       throw ApiError.BadRequest("shop.user-stats-not-found");
+    }
 
     if (userStats.currency == null) {
       throw ApiError.BadRequest("shop.invalid-currency-state");
@@ -122,85 +105,41 @@ class ShopService {
     const statKey = this.getStatKey(itemType);
     const currentLevel = userStats[statKey] || 0;
 
-    if (currentLevel >= this.maxLevel)
+    if (currentLevel >= this.maxLevel) {
       throw ApiError.BadRequest("shop.item-max-level");
+    }
 
-    const { data: shopItem, error: shopError } = await supabase
-      .from("shop_items")
-      .select("*")
-      .eq("type", itemType)
-      .single<IShopItemRecord>();
+    const shopItem = await this.shopModel.findShopItemByType(itemType);
 
-    if (shopError || !shopItem)
+    if (!shopItem) {
       throw ApiError.BadRequest("shop.shop-item-not-found");
+    }
 
-    const price = Math.floor(
-      Number(shopItem.base_price) *
-        Math.pow(this.priceMultiplier, currentLevel),
-    );
+    const price = this.calculatePrice(shopItem.base_price, currentLevel);
 
-    if (userStats.currency < price)
+    if (userStats.currency < price) {
       throw ApiError.BadRequest("shop.not-enough-currency");
+    }
 
     const newCurrency = userStats.currency - price;
+    const newLevel = currentLevel + 1;
 
     const updateData: Partial<IUserStats> = {
       currency: newCurrency,
-      [statKey]: currentLevel + 1,
+      [statKey]: newLevel,
     };
 
     if (itemType === "energy_limit") {
-      const { data: energyRow } = await supabase
-        .from("user_energy")
-        .select("*")
-        .eq("user_id", userId)
-        .single();
-
-      const newMax = (energyRow?.max_energy ?? this.baseMaxEnergy) + 1;
-      const newEnergy = (energyRow?.energy ?? this.baseMaxEnergy) + 1;
-
-      const energyUpdateData = {
-        max_energy: newMax,
-        energy: newEnergy,
-        updated_at: new Date().toISOString(),
-      };
-
-      if (energyRow) {
-        await supabase
-          .from("user_energy")
-          .update(energyUpdateData)
-          .eq("id", energyRow.id);
-      } else {
-        await supabase
-          .from("user_energy")
-          .insert({ ...energyUpdateData, user_id: userId });
-      }
+      await this.updateEnergyLimit(userId);
     }
 
-    const { error: updateError } = await supabase
-      .from("user_stats")
-      .update(updateData)
-      .eq("user_id", userId)
-      .select()
-      .single();
-
-    if (updateError) {
-      throw ApiError.BadRequest(updateError.message);
+    try {
+      await this.shopModel.updateUserStats(userId, updateData);
+    } catch {
+      throw ApiError.BadRequest("Failed to upgrade item");
     }
 
-    let effectValue: number;
-    const newLevel = currentLevel + 1;
-    switch (itemType) {
-      case "energy_limit":
-        effectValue = this.baseMaxEnergy + newLevel;
-        break;
-      case "recovery_speed":
-        effectValue = Math.max(60 - newLevel * 3, 24);
-        break;
-      case "pixel_reward":
-        effectValue = newLevel + 1;
-        break;
-    }
+    const effectValue = this.calculateEffectValue(itemType, newLevel);
 
     return {
       updatedStat: newLevel,
@@ -208,6 +147,26 @@ class ShopService {
       effectValue,
       recoverySpeed: itemType === "recovery_speed" ? effectValue : undefined,
     };
+  }
+
+  private async updateEnergyLimit(userId: string): Promise<void> {
+    const energyRow = await this.shopModel.findUserEnergy(userId);
+
+    const currentMax = energyRow?.max_energy ?? this.baseMaxEnergy;
+    const currentEnergy = energyRow?.energy ?? this.baseMaxEnergy;
+
+    const newMax = currentMax + 1;
+    const newEnergy = currentEnergy + 1;
+
+    if (energyRow) {
+      await this.shopModel.updateUserEnergy(energyRow.id, {
+        max_energy: newMax,
+        energy: newEnergy,
+        updated_at: new Date().toISOString(),
+      });
+    } else {
+      await this.shopModel.createUserEnergy(userId, newEnergy, newMax);
+    }
   }
 }
 

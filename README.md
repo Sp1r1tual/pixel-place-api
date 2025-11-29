@@ -1,4 +1,4 @@
-# 🎨 Pixel Place (Api)
+# 🎨 Pixel Place (Main service)
 
 **Pixel Place** is an interactive online platform where users collaborate to create a massive pixel canvas — one pixel at a time. Inspired by projects like Reddit r/place, w/place, and other collective art experiments, it turns chaos and creativity into a living digital mosaic.
 
@@ -35,7 +35,7 @@ It’s pixel democracy: **each user gets one pixel, but together, they build art
 - **Security:** bcrypt, cookie-parser, CORS, dotenv
 - **Tooling:** ESLint, Prettier, Husky, lint-staged
 
-📐 **Architecture**: Client ↔ Server ↔ MailService ↔ Database
+📐 **Architecture**: Client ↔ AuthService ↔ Server ↔ MailService ↔ Database
 
 ---
 
