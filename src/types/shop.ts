@@ -33,14 +33,6 @@ export interface IShopItemRecord {
   image_url: string;
 }
 
-export interface IUserEnergy {
-  id: string;
-  user_id: string;
-  energy: number;
-  max_energy: number;
-  updated_at: string;
-}
-
 export type ItemType = "energy_limit" | "recovery_speed" | "pixel_reward";
 
 export type StatLevelKey =
