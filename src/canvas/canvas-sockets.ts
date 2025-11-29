@@ -4,10 +4,11 @@ import { Server as HttpServer } from "http";
 import { IPixel } from "../types/canvas.js";
 
 import { socketErrorMiddleware } from "./middlewares/socket-error-middleware.js";
+
 import { authService } from "../auth/services/auth-service.js";
 import { CanvasService } from "./services/canvas-service.js";
+
 import { ApiError } from "../shared/exceptions/api-error.js";
-import { formatDateTime } from "../shared/utils/format-date.js";
 
 const canvasService = new CanvasService();
 
@@ -163,8 +164,7 @@ const initCanvasSocket = (server: HttpServer) => {
           try {
             await canvasService.placePixelsBatch(socket.user.id, pixels);
 
-            const isoDate = new Date().toISOString();
-            const placedAt = formatDateTime(isoDate);
+            const placedAt = new Date().toISOString();
 
             const pixelsWithUserId: IPixel[] = pixels.map((pixel) => {
               const pixelWithUserId: IPixel = {

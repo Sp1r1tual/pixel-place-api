@@ -10,7 +10,6 @@ import { CanvasModel } from "../models/canvas-model.js";
 
 import { ApiError } from "../../shared/exceptions/api-error.js";
 import { CANVAS_ERRORS } from "../utils/errors/errors-messages.js";
-import { formatDateTime } from "../../shared/utils/format-date.js";
 
 class CanvasService {
   private readonly DEFAULT_MAX_ENERGY = 10;
@@ -280,7 +279,7 @@ class CanvasService {
       y: p.y,
       color: p.color,
       userId: p.user_id,
-      placedAt: formatDateTime(p.placed_at),
+      placedAt: p.placed_at,
     }));
   }
 
