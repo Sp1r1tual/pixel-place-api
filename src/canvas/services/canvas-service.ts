@@ -16,6 +16,8 @@ class CanvasService {
   private readonly DEFAULT_MAX_ENERGY = 10;
   private readonly BASE_RECOVERY_INTERVAL_SECONDS = 60;
   private readonly MIN_RECOVERY_INTERVAL_SECONDS = 24;
+  private readonly MAX_LEVEL = 100;
+  private readonly BASE_EXP_REQUIRED = 10;
   private readonly canvasModel: CanvasModel;
 
   constructor() {
@@ -37,6 +39,28 @@ class CanvasService {
 
   private calculatePixelReward(pixelRewardLevel: number): number {
     return 1 + pixelRewardLevel;
+  }
+
+  private calculateExpForLevel(level: number): number {
+    return this.BASE_EXP_REQUIRED + (level - 1);
+  }
+
+  private calculateLevelFromRepaints(repaints: number): number {
+    let level = 1;
+    let remainingExp = repaints;
+
+    for (let i = 1; i <= this.MAX_LEVEL; i++) {
+      const expForLevel = this.calculateExpForLevel(i);
+
+      if (remainingExp >= expForLevel) {
+        remainingExp -= expForLevel;
+        level = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    return Math.min(level, this.MAX_LEVEL);
   }
 
   private async ensureUserStats(userId: string): Promise<IUserStats> {
@@ -112,6 +136,28 @@ class CanvasService {
     }
   }
 
+  private async incrementRepaintsAndUpdateLevel(
+    userId: string,
+    pixelsCount: number,
+  ): Promise<void> {
+    try {
+      const userStats = await this.getUserStats(userId);
+      const currentRepaints = userStats.repaints || 0;
+      const newRepaints = currentRepaints + pixelsCount;
+
+      const newLevel = this.calculateLevelFromRepaints(newRepaints);
+
+      await this.canvasModel.updateRepaintsAndLevel(
+        userId,
+        newRepaints,
+        newLevel,
+      );
+    } catch (error) {
+      console.error("Error updating repaints and level:", error);
+      throw ApiError.BadRequest("Failed to update repaints and level");
+    }
+  }
+
   public async useEnergy(
     userId: string,
     amount: number,
@@ -182,6 +228,12 @@ class CanvasService {
       await this.addCurrencyReward(userId, currencyReward);
     } catch (currencyError) {
       console.error("Currency update error:", currencyError);
+    }
+
+    try {
+      await this.incrementRepaintsAndUpdateLevel(userId, pixelCount);
+    } catch (levelError) {
+      console.error("Level update error:", levelError);
     }
 
     return {

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 
-import { IAuthRequest } from "../../types/auth.js";
+import { IAuthRequest } from "../../types/index.js";
 import { ProfileService } from "../services/profile-service.js";
 import { uploadAvatarToCloudinary } from "../utils/upload-avatar.js";
 

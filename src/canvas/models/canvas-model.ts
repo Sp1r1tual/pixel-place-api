@@ -30,6 +30,8 @@ class CanvasModel {
         energy_limit_level: 0,
         recovery_speed_level: 0,
         pixel_reward_level: 0,
+        repaints: 0,
+        level: 1,
       })
       .select("*")
       .single<IUserStats>();
@@ -48,6 +50,21 @@ class CanvasModel {
 
     if (error) {
       throw new Error("Failed to update currency");
+    }
+  }
+
+  async updateRepaintsAndLevel(
+    userId: string,
+    repaints: number,
+    level: number,
+  ): Promise<void> {
+    const { error } = await supabase
+      .from("user_stats")
+      .update({ repaints, level })
+      .eq("user_id", userId);
+
+    if (error) {
+      throw new Error("Failed to update repaints and level");
     }
   }
 

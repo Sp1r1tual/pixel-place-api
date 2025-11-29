@@ -4,6 +4,8 @@ export interface IUserStats {
   energy_limit_level: number;
   recovery_speed_level: number;
   pixel_reward_level: number;
+  repaints: number;
+  level: number;
 }
 
 export interface IShopItem {

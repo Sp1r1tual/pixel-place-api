@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 
-import { IAuthRequest } from "../../types/auth.js";
+import { IAuthRequest } from "../../types/index.js";
 
 import { authService } from "../../auth/services/auth-service.js";
 import { ApiError } from "../exceptions/api-error.js";

@@ -51,28 +51,19 @@ class ProfileRModel {
     return data;
   }
 
-  async updateUserLevel(userId: string, level: number): Promise<void> {
-    const { error } = await supabase
+  async getUserStats(
+    userId: string,
+  ): Promise<{ level: number; repaints: number } | null> {
+    const { data, error } = await supabase
       .from("user_stats")
-      .update({ level })
-      .eq("user_id", userId);
+      .select("level, repaints")
+      .eq("user_id", userId)
+      .single();
 
-    if (error) {
-      console.error("Error updating user level:", error);
+    if (error || !data) {
+      return null;
     }
-  }
-
-  async getRepaintsCount(userId: string): Promise<number> {
-    const { count, error } = await supabase
-      .from("pixels")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId);
-
-    if (error) {
-      console.error("Error getting repaints count:", error);
-      return 0;
-    }
-    return count || 0;
+    return data;
   }
 
   async findUserById(userId: string): Promise<IProfileUser | null> {

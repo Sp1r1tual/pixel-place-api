@@ -10,43 +10,10 @@ import { formatDate } from "../../shared/utils/format-date.js";
 import { deleteOldAvatarIfNeeded } from "../utils/delete-old-user-avatar.js";
 
 class ProfileService {
-  private readonly MAX_LEVEL = 100;
-  private readonly BASE_EXP_REQUIRED = 10;
   private readonly profileRModel: ProfileRModel;
 
   constructor() {
     this.profileRModel = new ProfileRModel();
-  }
-
-  private calculateExpForLevel(level: number): number {
-    return this.BASE_EXP_REQUIRED + (level - 1);
-  }
-
-  private calculateLevelFromRepaints(repaints: number): number {
-    let level = 1;
-    let remainingExp = repaints;
-
-    for (let i = 1; i <= this.MAX_LEVEL; i++) {
-      const expForLevel = this.calculateExpForLevel(i);
-
-      if (remainingExp >= expForLevel) {
-        remainingExp -= expForLevel;
-        level = i + 1;
-      } else {
-        break;
-      }
-    }
-
-    return Math.min(level, this.MAX_LEVEL);
-  }
-
-  private async updateUserLevel(
-    userId: string,
-    repaints: number,
-  ): Promise<number> {
-    const level = this.calculateLevelFromRepaints(repaints);
-    await this.profileRModel.updateUserLevel(userId, level);
-    return level;
   }
 
   private async ensureUserProfile(userId: string) {
@@ -68,21 +35,19 @@ class ProfileService {
       throw ApiError.UnauthorizedError();
     }
 
-    const [profile, repaints, createdAt] = await Promise.all([
+    const [profile, stats, createdAt] = await Promise.all([
       this.ensureUserProfile(userId),
-      this.profileRModel.getRepaintsCount(userId),
+      this.profileRModel.getUserStats(userId),
       this.profileRModel.getUserCreatedAt(userId),
     ]);
-
-    const level = await this.updateUserLevel(userId, repaints);
 
     return {
       userId: userId,
       username: profile.username || undefined,
       bio: profile.bio || undefined,
       avatarSrc: profile.avatar_src || undefined,
-      level: level,
-      repaints: repaints,
+      level: stats?.level || 1,
+      repaints: stats?.repaints || 0,
       joined: formatDate(createdAt),
     };
   }
@@ -98,20 +63,18 @@ class ProfileService {
       throw ApiError.NotFound("User not found");
     }
 
-    const [profile, repaints] = await Promise.all([
+    const [profile, stats] = await Promise.all([
       this.ensureUserProfile(userId),
-      this.profileRModel.getRepaintsCount(userId),
+      this.profileRModel.getUserStats(userId),
     ]);
-
-    const level = await this.updateUserLevel(userId, repaints);
 
     return {
       userId: userId,
       username: profile.username || undefined,
       bio: profile.bio || undefined,
       avatarSrc: profile.avatar_src || undefined,
-      level: level,
-      repaints: repaints,
+      level: stats?.level || 1,
+      repaints: stats?.repaints || 0,
       joined: formatDate(user.created_at),
     };
   }
