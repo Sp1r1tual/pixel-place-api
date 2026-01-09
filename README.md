@@ -1,66 +1,69 @@
-# 🎨 Pixel Place (Main service)
+# Pixel Place (Main API)
 
-**Pixel Place** is an interactive online platform where users collaborate to create a massive pixel canvas — one pixel at a time. Inspired by projects like Reddit r/place, w/place, and other collective art experiments, it turns chaos and creativity into a living digital mosaic.
+**Pixel Place** is an interactive online platform where users collaborate to create a massive pixel canvas – one pixel at a time. Inspired by projects like [Reddit r/place](https://www.reddit.com/r/place/), [w/place](https://wplace.live/), and other collective art experiments, it turns chaos and creativity into a living digital mosaic.
 
 ---
 
-## 💡 Concept
+## Concept
 
-**Pixel Place isn’t just a project — it’s a social experiment.** It’s about coexistence on a single canvas, where hundreds of users shape a shared digital world — sometimes chaotic, sometimes beautiful, always alive.
+**Pixel Place isn’t just a project – it’s a social experiment.** It’s about coexistence on a single canvas, where hundreds of users shape a shared digital world – sometimes chaotic, sometimes beautiful, always alive.
 
 It’s pixel democracy: **each user gets one pixel, but together, they build art.**
 
 ---
 
-## 🚀 Features
+## About the Project
 
-- 🧱 Live collaborative canvas — see others’ updates instantly via WebSockets
-- 🔐 JWT authentication with refresh tokens
-- 🎨 Color palette — choose from a curated set of colors
-- 🔋 Energy system — each pixel placement consumes energy that regenerates over time
-- 👩‍🦰 User profiles — displaying statistics and users avatars
-- 🪙 Shop — users have the ability to purchase upgrades with in-game currency
+This is the author’s second full-fledged project, and the MVP was built in just 10 days. The project allowed the author to practice WebSockets, real-time collaboration, and state synchronization. Ever since starting programming, the author dreamed of creating a project like this – a digital canvas shaped by lot of users simultaneously.
 
 ---
 
-## 🛠️ Tech Stack
+## Features
 
-- **Runtime:** Node.js
-- **Framework:** Express
-- **Language:** TypeScript
-- **Realtime Engine:** Socket.IO
-- **Database Layer:** Supabase (PostgreSQL)
-- **Authentication:** JSON Web Tokens
-- **Validation:** express-validator
-- **Security:** bcrypt, cookie-parser, CORS, dotenv
-- **Tooling:** ESLint, Prettier, Husky, lint-staged
-
-📐 **Architecture**: Client ↔ AuthService ↔ Server ↔ MailService ↔ Database
+- 🧱 Live collaborative canvas – see others’ updates instantly via WebSockets
+- 🔐 JWT authentication – secure login, account activation via email, and password recovery
+- 🎨 Color palette – choose from a curated set of colors
+- 🔍 Pixel info – view details about each pixel on the canvas
+- 🔋 Energy system – each pixel placement consumes energy that regenerates over time
+- 👩‍🦰 User profiles – displaying statistics and users avatars
+- 🪙 Shop – users have the ability to purchase upgrades with in-game currency
+- 🌍 Localization – support for three languages to reach a wider audience
 
 ---
 
-## ⚠️ There is currently a problem with registration for Apple products
+## Tech Stack
 
-At the moment, users on Apple devices may encounter issues during the registration process. This limitation is caused by the way JWT tokens interact with cookies when a project operates across multiple domains. Due to current hosting constraints, the application cannot be deployed on a single shared domain, and as a result, Apple’s security restrictions prevent cookies from being stored or read reliably during authentication.
+- Express
+- TypeScript
+- Socket.IO
+- Axios
+- Supabase
+- JSON Web Tokens
+- express-validator
+- multer-storage-cloudinary
 
-The registration itself is completed successfully, but the refresh mechanism does not function as expected. Because the refresh token cannot be properly saved or accessed in the browser, sessions on Apple devices expire without the ability to renew them automatically.
-
----
-
-## 🌐 Future Plans
-
-- 🏆 Leaderboard system — global ranking based on activity, precision, and contribution streaks; highlights top creators and pixel warriors.
-
-- 🎁 Daily bonuses & streak rewards — log in daily to earn cooldown reductions, cosmetic effects, or limited-time colors.
-
-- 🧱 Moderation tools — community-driven reporting and restoration systems to prevent vandalism and maintain fair play.
-
-- 🪄 Seasonal events & limited challenges — themed canvases, world resets, or time-limited events that bring the community together in bursts of creativity.
-
-- ⚡ And much more!
+**Architecture**: Client ↔ (Main API - Auth API - Mail API) ↔ Database
 
 ---
 
-## 📜 License
+## Future Plans
 
-MIT © 2025 — built with ❤️ by the Pixel Place community
+- **Leaderboard system** – global ranking based on activity, precision, and contribution streaks; highlights top creators and pixel warriors.
+
+- **Daily bonuses & streak rewards** – log in daily to earn cooldown reductions, cosmetic effects, or limited-time colors.
+
+- **Moderation tools** – community-driven reporting and restoration systems to prevent vandalism and maintain fair play.
+
+- **Seasonal events & limited challenges** – themed canvases, world resets, or time-limited events that bring the community together in bursts of creativity.
+
+- **Complete documentation** – provide full and detailed documentation for the service
+
+---
+
+## License
+
+Currently, this project does not include a formal license. All rights are reserved by the author.
+
+If you plan to use, modify, or distribute this project, please contact the author for permission.
+
+Built with ❤️ by the Pixel Place community
