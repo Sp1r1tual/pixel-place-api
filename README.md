@@ -33,16 +33,15 @@ This is the author’s second full-fledged project, and the MVP was built in jus
 
 ## Tech Stack
 
-- Express
 - TypeScript
+- Express
 - Socket.IO
 - Axios
 - Supabase
 - JSON Web Tokens
-- express-validator
-- multer-storage-cloudinary
+- Multer Storage Cloudinary
 
-**Architecture**: Client ↔ (Main API - Auth API - Mail API) ↔ Database
+**Architecture**: Client ↔ (Main API - Mail API) ↔ Database
 
 ---
 

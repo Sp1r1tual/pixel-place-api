@@ -1,5 +1,6 @@
 import { Express, Request, Response } from "express";
 
+import { authRouter } from "./auth/routers/auth-router.js";
 import { shopRouter } from "./shop/routers/shop-router.js";
 import { profileRouter } from "./profile/routers/profile-router.js";
 import { systemRouter } from "./system/routers/system-router.js";
@@ -16,6 +17,7 @@ const router = (app: Express) => {
     res.json({ message: "Pixel Place API is running" });
   });
 
+  app.use("/", authRouter);
   app.use("/", shopRouter);
   app.use("/", profileRouter);
   app.use("/", systemRouter);

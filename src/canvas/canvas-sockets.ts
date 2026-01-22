@@ -5,12 +5,13 @@ import { IPixel } from "../types/canvas.js";
 
 import { socketErrorMiddleware } from "./middlewares/socket-error-middleware.js";
 
-import { authService } from "../auth/services/auth-service.js";
+import { AuthService } from "../auth/services/auth-service.js";
 import { CanvasService } from "./services/canvas-service.js";
 
 import { ApiError } from "../shared/exceptions/api-error.js";
 
 const canvasService = new CanvasService();
+const authService = new AuthService();
 
 interface CanvasSocket extends Socket {
   user?: { id: string; email: string };
@@ -142,6 +143,8 @@ const initCanvasSocket = (server: HttpServer) => {
             err?: string,
             energyLeft?: number,
             maxEnergy?: number,
+            recoverySpeed?: number,
+            updatedAt?: string,
           ) => void,
         ) => {
           if (!socket.user) throw new Error("Unauthorized");
@@ -162,33 +165,31 @@ const initCanvasSocket = (server: HttpServer) => {
           }
 
           try {
-            await canvasService.placePixelsBatch(socket.user.id, pixels);
+            const energyResult = await canvasService.placePixelsBatch(
+              socket.user.id,
+              pixels,
+            );
 
             const placedAt = new Date().toISOString();
 
-            const pixelsWithUserId: IPixel[] = pixels.map((pixel) => {
-              const pixelWithUserId: IPixel = {
-                x: pixel.x,
-                y: pixel.y,
-                color: pixel.color,
-                userId: socket.user!.id,
-                placedAt: placedAt,
-              };
+            const pixelsWithUserId: IPixel[] = pixels.map((pixel) => ({
+              x: pixel.x,
+              y: pixel.y,
+              color: pixel.color,
+              userId: socket.user!.id,
+              placedAt: placedAt,
+            }));
 
-              canvasState[`${pixel.x}:${pixel.y}`] = pixelWithUserId;
-              return pixelWithUserId;
+            pixelsWithUserId.forEach((pixel) => {
+              canvasState[`${pixel.x}:${pixel.y}`] = pixel;
             });
 
-            const energyResultPromise = canvasService.getEnergy(socket.user.id);
             io.emit("updatePixels", pixelsWithUserId);
-            const energyResult = await energyResultPromise;
 
             socket.emit(
               "energyUpdate",
               energyResult.energy,
               energyResult.maxEnergy,
-              energyResult.recoverySpeed,
-              energyResult.updatedAt,
             );
 
             callback?.(undefined, energyResult.energy, energyResult.maxEnergy);

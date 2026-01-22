@@ -1,6 +1,6 @@
 {
   "name": "pixel-place-api",
-  "version": "1.1.0",
+  "version": "1.3.1",
   "main": "index.js",
   "license": "MIT",
   "type": "module",
@@ -13,7 +13,14 @@
     "lint:check": "eslint src/",
     "type-check": "tsc --noEmit",
     "format": "prettier --write src/",
-    "prepare": "husky"
+    "prepare": "husky",
+    "supabase:login": "supabase login",
+    "supabase:init": "supabase init",
+    "supabase:link": "supabase link --project-ref escexwoytjtvhwzsnjic",
+    "supabase:migration:new": "supabase migration new",
+    "supabase:migration:up": "supabase db push",
+    "supabase:reset": "supabase db reset",
+    "db:setup": "npm run supabase:link && npm run supabase:migration:up"
   },
   "lint-staged": {
     "src/**/*.{js,ts,json}": [
@@ -56,6 +63,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.2.3",
     "prettier": "^3.6.2",
+    "supabase": "^2.72.8",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"

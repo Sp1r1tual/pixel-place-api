@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 
 import { IAuthRequest } from "../../types/index.js";
 
-import { authService } from "../../auth/services/auth-service.js";
+import { AuthService } from "../../auth/services/auth-service.js";
 import { ApiError } from "../exceptions/api-error.js";
 
 const checkAuthMiddleware = async (
@@ -10,6 +10,8 @@ const checkAuthMiddleware = async (
   res: Response,
   next: NextFunction,
 ) => {
+  const authService = new AuthService();
+
   try {
     const authHeader = req.headers.authorization;
 
