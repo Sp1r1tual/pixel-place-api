@@ -65,6 +65,76 @@ This is the author’s second full-fledged project, and the MVP was built in jus
 
 ---
 
+## Local Development Setup
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Sp1r1tual/pixel-place-api.git
+```
+
+### Mail Service
+
+This project requires a separate mail service. Clone and set it up first by following the instructions in its repository:
+
+```bash
+git clone https://github.com/Sp1r1tual/mail-api.git
+```
+
+### 2. Install dependencies
+
+```bash
+yarn install
+```
+
+### 3. Configure environment variables
+
+Copy `.env.example` to `.env` and fill in the values:
+
+```dotenv
+PORT=5000
+CLIENT_URL=http://localhost:5173
+API_URL=http://localhost:5000
+
+# Supabase — create a project at https://supabase.com
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Cloudinary — create a free account at https://cloudinary.com
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# JWT
+JWT_ACCESS_SECRET=your_jwt_access_secret
+JWT_REFRESH_SECRET=your_jwt_refresh_secret
+JWT_RESET_SECRET=your_jwt_reset_secret
+
+# Mail Service URL (from the mail-api repository)
+MAIL_SERVICE_URL=http://localhost:10000
+```
+
+### 4. Set up the database
+
+Log in to Supabase CLI and push migrations to your project:
+
+```bash
+npm run supabase:login
+npm run db:setup
+```
+
+> `db:setup` links your local project to the remote Supabase instance and pushes all migrations.
+
+### 5. Start the server
+
+```bash
+yarn dev
+```
+
+The server will be available at `http://localhost:5000`.
+
+---
+
 ## License
 
 Currently, this project does not include a formal license. All rights are reserved by the author.
@@ -72,4 +142,3 @@ Currently, this project does not include a formal license. All rights are reserv
 If you plan to use, modify, or distribute this project, please contact the author for permission.
 
 Built with ❤️ by the Pixel Place community
-
