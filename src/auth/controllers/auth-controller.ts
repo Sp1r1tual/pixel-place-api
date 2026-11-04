@@ -1,30 +1,44 @@
-import { Request, Response, NextFunction } from "express";
+import { CookieOptions, Request, Response, NextFunction } from "express";
 
 import { IAuthPayload } from "../../types/auth.js";
 
 import { AuthService } from "../services/auth-service.js";
 
 import { ApiError } from "../../shared/exceptions/api-error.js";
+import { REFRESH_TOKEN_TTL_MS } from "../utils/tokens.js";
 
 import { activationSuccessHTML } from "../views/activation-success.js";
 import { activationErrorHTML } from "../views/activation-fail.js";
 
 const authService = new AuthService();
 
+const REFRESH_COOKIE = "refreshToken";
+const REFRESH_COOKIE_OPTIONS: CookieOptions = {
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+  path: "/",
+};
+
 class AuthController {
-  private setRefreshTokenCookie(res: Response, token: string) {
-    res.cookie("refreshToken", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      path: "/",
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+  /** The refresh token only ever travels in the httpOnly cookie, never in the body. */
+  private sendSession(
+    res: Response,
+    session: { accessToken: string; refreshToken?: string; user: object },
+  ) {
+    if (session.refreshToken) {
+      res.cookie(REFRESH_COOKIE, session.refreshToken, {
+        ...REFRESH_COOKIE_OPTIONS,
+        maxAge: REFRESH_TOKEN_TTL_MS,
+      });
+    }
+
+    res.json({ accessToken: session.accessToken, user: session.user });
   }
 
   validateToken = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { token } = req.body;
+      const { token } = req.body ?? {};
 
       if (!token) {
         throw ApiError.BadRequest("Token is required");
@@ -44,11 +58,8 @@ class AuthController {
   login = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body as IAuthPayload;
-      const userData = await authService.login({ email, password });
 
-      this.setRefreshTokenCookie(res, userData.refreshToken);
-
-      res.json(userData);
+      this.sendSession(res, await authService.login({ email, password }));
     } catch (error) {
       next(error);
     }
@@ -58,11 +69,11 @@ class AuthController {
     try {
       const { refreshToken } = req.cookies as { refreshToken?: string };
 
-      if (!refreshToken) throw ApiError.BadRequest("Refresh token missing");
+      if (refreshToken) await authService.logout(refreshToken);
 
-      await authService.logout(refreshToken);
-
-      res.clearCookie("refreshToken").json({ message: "Logged out" });
+      res
+        .clearCookie(REFRESH_COOKIE, REFRESH_COOKIE_OPTIONS)
+        .json({ message: "Logged out" });
     } catch (error) {
       next(error);
     }
@@ -71,11 +82,8 @@ class AuthController {
   registration = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body as IAuthPayload;
-      const userData = await authService.registration({ email, password });
 
-      this.setRefreshTokenCookie(res, userData.refreshToken);
-
-      res.json(userData);
+      res.json(await authService.registration({ email, password }));
     } catch (error) {
       next(error);
     }
@@ -83,18 +91,22 @@ class AuthController {
 
   activate = async (req: Request, res: Response) => {
     try {
-      await authService.activate(req.params.link);
+      await authService.activate(req.params.link as string);
       res
         .type("html")
         .send(activationSuccessHTML(`${process.env.CLIENT_URL}/login`));
     } catch (error) {
+      if (!(error instanceof ApiError)) console.error(error);
+
       res
         .status(400)
         .type("html")
         .send(
           activationErrorHTML(
             `${process.env.CLIENT_URL}/login`,
-            (error as Error).message,
+            error instanceof ApiError
+              ? error.message
+              : "errors.something-went-wrong",
           ),
         );
     }
@@ -102,12 +114,9 @@ class AuthController {
 
   refresh = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { refreshToken } = req.cookies;
-      const userData = await authService.refresh(refreshToken);
+      const { refreshToken } = req.cookies as { refreshToken?: string };
 
-      this.setRefreshTokenCookie(res, userData.refreshToken);
-
-      res.json(userData);
+      this.sendSession(res, await authService.refresh(refreshToken));
     } catch (error) {
       next(error);
     }
@@ -127,9 +136,8 @@ class AuthController {
   resetPassword = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { password } = req.body;
-      const { token } = req.params;
 
-      await authService.resetPassword(token, password);
+      await authService.resetPassword(req.params.token as string, password);
 
       res.json({ message: "Password reset successfully" });
     } catch (error) {

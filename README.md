@@ -98,7 +98,8 @@ API_URL=http://localhost:5000
 
 # Supabase — create a project at https://supabase.com
 SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
+# Server-side only: this key bypasses row level security
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
 # Cloudinary — create a free account at https://cloudinary.com
 CLOUDINARY_CLOUD_NAME=your_cloud_name
@@ -108,10 +109,15 @@ CLOUDINARY_API_SECRET=your_api_secret
 # JWT
 JWT_ACCESS_SECRET=your_jwt_access_secret
 JWT_REFRESH_SECRET=your_jwt_refresh_secret
-JWT_RESET_SECRET=your_jwt_reset_secret
 
 # Mail Service URL (from the mail-api repository)
 MAIL_SERVICE_URL=http://localhost:10000
+# Must match MAIL_API_SECRET in the mail-api repository
+MAIL_API_SECRET=your_shared_secret
+
+# Reverse proxies in front of the API (usually 1 in production).
+# Rate limits key on the client IP, so a wrong value makes all users share one limit.
+TRUST_PROXY_HOPS=0
 ```
 
 ### 4. Set up the database

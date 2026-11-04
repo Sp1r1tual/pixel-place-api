@@ -1,8 +1,8 @@
+import { randomUUID } from "crypto";
 import bcrypt from "bcrypt";
-import { v4 as uuidv4 } from "uuid";
 import jwt from "jsonwebtoken";
 
-import { IAuthPayload, ITokens } from "../../types/auth.js";
+import { IAuthPayload, ITokens, IUser } from "../../types/auth.js";
 
 import { AuthModel } from "../models/auth-model.js";
 
@@ -11,41 +11,58 @@ import { EmailService } from "./email-service.js";
 import { UserDto } from "../dto/userDto.js";
 import { ApiError } from "../../shared/exceptions/api-error.js";
 import { AUTH_ERRORS } from "../utils/errors/errors-messages.js";
+import {
+  REFRESH_TOKEN_TTL_MS,
+  RESET_MAIL_COOLDOWN_MS,
+  RESET_TOKEN_TTL_MS,
+  ROTATION_GRACE_MS,
+  hashToken,
+} from "../utils/tokens.js";
+
+const BCRYPT_ROUNDS = 10;
+
+const msAgo = (ms: number) => new Date(Date.now() - ms).toISOString();
+const refreshExpiry = () =>
+  new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString();
 
 class AuthService {
-  private readonly authModel: AuthModel;
+  private readonly authModel = new AuthModel();
+  private readonly emailService = new EmailService();
+  private dummyHash: Promise<string> | null = null;
 
-  constructor() {
-    this.authModel = new AuthModel();
-  }
-
-  private generateTokens(payload: object): ITokens {
+  private generateTokens(user: IUser): ITokens & { user: UserDto } {
     const accessSecret = process.env.JWT_ACCESS_SECRET;
     const refreshSecret = process.env.JWT_REFRESH_SECRET;
 
     if (!accessSecret || !refreshSecret) throw new Error("JWT secrets not set");
 
+    const userDto = new UserDto(user);
+    const payload = { ...userDto };
+
     return {
+      user: userDto,
       accessToken: jwt.sign(payload, accessSecret, { expiresIn: "15m" }),
-      refreshToken: jwt.sign(payload, refreshSecret, { expiresIn: "30d" }),
+      refreshToken: jwt.sign(payload, refreshSecret, {
+        expiresIn: Math.floor(REFRESH_TOKEN_TTL_MS / 1000),
+        jwtid: randomUUID(),
+      }),
     };
   }
 
-  private async saveToken(userId: string, refreshToken: string): Promise<void> {
-    const existing = await this.authModel.findTokenByUserId(userId);
-
-    if (existing) {
-      await this.authModel.updateToken(userId, refreshToken);
-    } else {
-      await this.authModel.createToken(userId, refreshToken);
-    }
+  /** Spends the same time as a real check so that timing does not reveal who exists. */
+  private async compareWithDummyHash(password: string): Promise<void> {
+    this.dummyHash ??= bcrypt.hash(randomUUID(), BCRYPT_ROUNDS);
+    await bcrypt.compare(password, await this.dummyHash);
   }
 
-  private async deleteUser(userId: string): Promise<void> {
+  private verifyRefreshToken(refreshToken: string): { id: string } {
+    const secret = process.env.JWT_REFRESH_SECRET;
+    if (!secret) throw new Error("JWT_REFRESH_SECRET not set");
+
     try {
-      await this.authModel.deleteUser(userId);
-    } catch (error) {
-      console.error("Exception while deleting user:", error);
+      return jwt.verify(refreshToken, secret) as { id: string };
+    } catch {
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidRefreshToken);
     }
   }
 
@@ -56,11 +73,7 @@ class AuthService {
     if (!secret) throw new Error("JWT_ACCESS_SECRET not set");
 
     try {
-      const userData = jwt.verify(token, secret) as {
-        id: string;
-        email: string;
-      };
-      return userData;
+      return jwt.verify(token, secret) as { id: string; email: string };
     } catch {
       throw ApiError.UnauthorizedError("Invalid access token");
     }
@@ -69,29 +82,38 @@ class AuthService {
   public async login({ email, password }: IAuthPayload) {
     const user = await this.authModel.findUserByEmail(email);
 
-    if (!user) throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
+    if (!user) {
+      await this.compareWithDummyHash(password);
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidCredentials);
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch)
-      throw ApiError.UnauthorizedError(AUTH_ERRORS.incorrectPassword);
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidCredentials);
     if (!user.is_activated)
       throw ApiError.UnauthorizedError(AUTH_ERRORS.userNotActivated);
 
-    const userDto = new UserDto(user);
-    const tokens = this.generateTokens({ ...userDto });
-    await this.saveToken(userDto.id, tokens.refreshToken);
+    const session = this.generateTokens(user);
 
-    return { ...tokens, user: userDto };
+    await this.authModel.deleteExpiredTokens(user.id);
+    await this.authModel.createToken(
+      user.id,
+      hashToken(session.refreshToken),
+      refreshExpiry(),
+    );
+
+    return session;
   }
 
+  /** Issues no tokens: the first session starts at login, after activation. */
   public async registration({ email, password }: IAuthPayload) {
     const existing = await this.authModel.findUserByEmail(email);
     if (existing) throw ApiError.BadRequest(AUTH_ERRORS.userAlreadyExists);
 
-    const hashPassword = await bcrypt.hash(password, 10);
-    const activationLink = uuidv4();
+    const hashPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const activationLink = randomUUID();
 
-    let user;
+    let user: IUser;
     try {
       user = await this.authModel.createUser({
         email,
@@ -104,33 +126,25 @@ class AuthService {
     }
 
     try {
-      const emailService = new EmailService();
-      await emailService.sendActivationMail(
+      await this.emailService.sendActivationMail(
         email,
         `${process.env.API_URL}/activate/${activationLink}`,
-        2,
       );
     } catch (emailError) {
-      console.error(
-        `Failed to send activation email, deleting user... ${emailError}`,
-      );
+      console.error(`Activation mail failed, deleting user: ${emailError}`);
 
-      await this.deleteUser(user.id);
+      await this.authModel
+        .deleteUser(user.id)
+        .catch((error) => console.error("Failed to delete user:", error));
 
-      throw ApiError.BadRequest(
-        "Failed to send activation email. Please try registering again later.",
-      );
+      throw ApiError.BadRequest(AUTH_ERRORS.registrationFailed);
     }
 
-    const userDto = new UserDto(user);
-    const tokens = this.generateTokens({ ...userDto });
-    await this.saveToken(userDto.id, tokens.refreshToken);
-
-    return { ...tokens, user: userDto };
+    return { user: new UserDto(user) };
   }
 
   public async logout(refreshToken: string): Promise<void> {
-    await this.authModel.deleteTokenByRefreshToken(refreshToken);
+    await this.authModel.deleteToken(hashToken(refreshToken));
   }
 
   public async activate(activationLink: string): Promise<void> {
@@ -142,84 +156,89 @@ class AuthService {
     await this.authModel.updateUser(user.id, { is_activated: true });
   }
 
-  public async refresh(refreshToken: string) {
+  public async refresh(
+    refreshToken?: string,
+  ): Promise<{ accessToken: string; refreshToken?: string; user: UserDto }> {
     if (!refreshToken)
       throw ApiError.UnauthorizedError(AUTH_ERRORS.missingRefreshToken);
 
-    const secret = process.env.JWT_REFRESH_SECRET;
-    if (!secret) throw new Error("JWT_REFRESH_SECRET not set");
+    const { id } = this.verifyRefreshToken(refreshToken);
 
-    try {
-      const userData = jwt.verify(refreshToken, secret) as {
-        id: string;
-        email: string;
-      };
+    const user = await this.authModel.findUserById(id);
+    if (!user?.is_activated)
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidRefreshToken);
 
-      const tokenRecord =
-        await this.authModel.findTokenByRefreshToken(refreshToken);
-      if (!tokenRecord)
-        throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidRefreshToken);
+    const session = this.generateTokens(user);
+    const tokenHash = hashToken(refreshToken);
 
-      const user = await this.authModel.findUserById(userData.id);
-      if (!user) throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
+    const rotated = await this.authModel.rotateToken(
+      tokenHash,
+      hashToken(session.refreshToken),
+      refreshExpiry(),
+    );
 
-      const userDto = new UserDto(user);
-      const tokens = this.generateTokens({ ...userDto });
-      await this.saveToken(userDto.id, tokens.refreshToken);
+    if (rotated) return session;
 
-      return { ...tokens, user: userDto };
-    } catch (error) {
-      if (error instanceof jwt.JsonWebTokenError) {
-        throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidRefreshToken);
-      }
-      throw error;
-    }
+    // Another tab just rotated this token and its response carries the new cookie,
+    // so this request only gets an access token and leaves the cookie alone.
+    const justRotated = await this.authModel.wasRotatedAfter(
+      tokenHash,
+      msAgo(ROTATION_GRACE_MS),
+    );
+
+    if (!justRotated)
+      throw ApiError.UnauthorizedError(AUTH_ERRORS.invalidRefreshToken);
+
+    return { accessToken: session.accessToken, user: session.user };
   }
 
+  /** Always succeeds from the caller's view, so it cannot be used to probe emails. */
   public async forgotPassword(email: string): Promise<void> {
     const user = await this.authModel.findUserByEmail(email);
-    if (!user) throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
+    if (!user) return;
 
-    const resetToken = uuidv4();
+    const recentlySent = await this.authModel.hasResetTokenCreatedAfter(
+      user.id,
+      msAgo(RESET_MAIL_COOLDOWN_MS),
+    );
+    if (recentlySent) return;
 
-    try {
-      await this.authModel.createResetToken(user.id, resetToken);
-    } catch {
-      throw ApiError.BadRequest("Failed to create reset token");
-    }
+    const resetToken = randomUUID();
+    const tokenHash = hashToken(resetToken);
 
-    try {
-      const emailService = new EmailService();
-      await emailService.sendResetPasswordMail(
+    await this.authModel.deleteUserResetTokens(user.id);
+    await this.authModel.createResetToken(user.id, tokenHash);
+
+    // Not awaited: a response delayed by SMTP would reveal that the account exists.
+    void this.emailService
+      .sendResetPasswordMail(
         email,
         `${process.env.CLIENT_URL}/reset-password/${resetToken}`,
-        2,
-      );
-    } catch (emailError) {
-      console.error(`Failed to send reset password email... ${emailError}`);
-
-      await this.authModel.deleteResetToken(resetToken);
-
-      throw ApiError.BadRequest(
-        "Failed to send reset password email. Please try again later.",
-      );
-    }
+      )
+      .catch(async (emailError) => {
+        console.error(`Reset mail failed: ${emailError}`);
+        await this.authModel.deleteResetToken(tokenHash).catch(() => undefined);
+      });
   }
 
   public async resetPassword(
     resetToken: string,
     newPassword: string,
   ): Promise<void> {
-    const tokenRecord = await this.authModel.findResetToken(resetToken);
-    if (!tokenRecord)
-      throw ApiError.UnauthorizedError(AUTH_ERRORS.resetTokenUsed);
+    const tokenRecord = await this.authModel.findResetToken(
+      hashToken(resetToken),
+      msAgo(RESET_TOKEN_TTL_MS),
+    );
+    if (!tokenRecord) throw ApiError.BadRequest(AUTH_ERRORS.resetTokenInvalid);
 
-    const user = await this.authModel.findUserById(tokenRecord.user_id);
-    if (!user) throw ApiError.NotFound(AUTH_ERRORS.userNotFound);
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await this.authModel.updateUser(user.id, { password: hashedPassword });
-    await this.authModel.deleteResetToken(resetToken);
+    await this.authModel.updateUser(tokenRecord.user_id, {
+      password: hashedPassword,
+    });
+    await this.authModel.deleteUserResetTokens(tokenRecord.user_id);
+    // A changed password must end every session, including a stolen one.
+    await this.authModel.deleteUserTokens(tokenRecord.user_id);
   }
 }
 

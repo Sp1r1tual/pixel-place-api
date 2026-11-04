@@ -1,124 +1,56 @@
 import type {
   IUserStats,
   IShopItemRecord,
-  IUserEnergy,
+  IUpgradeResult,
+  ItemType,
 } from "../../types/index.js";
 
-import { supabase } from "../../index.js";
+import { supabase } from "../../shared/configs/supabase.js";
+import { toRpcError } from "../../shared/utils/rpc-error.js";
 
 class ShopModel {
-  async findUserStats(userId: string): Promise<IUserStats | null> {
+  /** Safe under concurrent calls: an existing row is left untouched. */
+  async ensureUserStats(userId: string): Promise<IUserStats> {
+    const { error: upsertError } = await supabase
+      .from("user_stats")
+      .upsert(
+        { user_id: userId },
+        { onConflict: "user_id", ignoreDuplicates: true },
+      );
+
+    if (upsertError) throw toRpcError(upsertError);
+
     const { data, error } = await supabase
       .from("user_stats")
       .select("*")
       .eq("user_id", userId)
       .single<IUserStats>();
 
-    if (error || !data) {
-      return null;
-    }
+    if (error) throw toRpcError(error);
     return data;
-  }
-
-  async createUserStats(userId: string): Promise<IUserStats> {
-    const { data, error } = await supabase
-      .from("user_stats")
-      .insert({
-        user_id: userId,
-        currency: 0,
-        energy_limit_level: 0,
-        recovery_speed_level: 0,
-        pixel_reward_level: 0,
-      })
-      .select()
-      .single<IUserStats>();
-
-    if (error || !data) {
-      throw new Error("Failed to create user stats");
-    }
-    return data;
-  }
-
-  async updateUserStats(
-    userId: string,
-    updates: Partial<IUserStats>,
-  ): Promise<void> {
-    const { error } = await supabase
-      .from("user_stats")
-      .update(updates)
-      .eq("user_id", userId);
-
-    if (error) {
-      throw new Error("Failed to update user stats");
-    }
   }
 
   async getAllShopItems(): Promise<IShopItemRecord[]> {
-    const { data, error } = await supabase.from("shop_items").select("*");
-
-    if (error || !data) {
-      throw new Error("Failed to fetch shop items");
-    }
-    return data as IShopItemRecord[];
-  }
-
-  async findShopItemByType(
-    type: "energy_limit" | "recovery_speed" | "pixel_reward",
-  ): Promise<IShopItemRecord | null> {
     const { data, error } = await supabase
       .from("shop_items")
       .select("*")
-      .eq("type", type)
-      .single<IShopItemRecord>();
+      .order("base_price", { ascending: true });
 
-    if (error || !data) {
-      return null;
-    }
-    return data;
+    if (error) throw toRpcError(error);
+    return data as IShopItemRecord[];
   }
 
-  async findUserEnergy(userId: string): Promise<IUserEnergy | null> {
-    const { data, error } = await supabase
-      .from("user_energy")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-
-    if (error || !data) {
-      return null;
-    }
-    return data;
-  }
-
-  async updateUserEnergy(
-    energyId: string,
-    updates: Partial<Omit<IUserEnergy, "id" | "user_id">>,
-  ): Promise<void> {
-    const { error } = await supabase
-      .from("user_energy")
-      .update(updates)
-      .eq("id", energyId);
-
-    if (error) {
-      throw new Error("Failed to update user energy");
-    }
-  }
-
-  async createUserEnergy(
+  async upgradeItem(
     userId: string,
-    energy: number,
-    maxEnergy: number,
-  ): Promise<void> {
-    const { error } = await supabase.from("user_energy").insert({
-      user_id: userId,
-      energy,
-      max_energy: maxEnergy,
-      updated_at: new Date().toISOString(),
+    itemType: ItemType,
+  ): Promise<IUpgradeResult> {
+    const { data, error } = await supabase.rpc("upgrade_item", {
+      p_user_id: userId,
+      p_item_type: itemType,
     });
 
-    if (error) {
-      throw new Error("Failed to create user energy");
-    }
+    if (error) throw toRpcError(error);
+    return data;
   }
 }
 

@@ -16,12 +16,6 @@ export interface IAuthRequest extends Request {
   };
 }
 
-export interface IToken {
-  id: string;
-  user_id: string;
-  refresh_token: string;
-}
-
 export interface IResetToken {
   id: string;
   user_id: string;

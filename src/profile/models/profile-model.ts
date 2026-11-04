@@ -1,4 +1,4 @@
-import { supabase } from "../../index.js";
+import { supabase } from "../../shared/configs/supabase.js";
 
 import { IUserProfile, IProfileUser } from "../../types/profile.js";
 
@@ -8,47 +8,22 @@ class ProfileRModel {
       .from("user_profiles")
       .select("*")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      return null;
-    }
+    if (error) throw error;
     return data;
   }
 
-  async createProfile(userId: string): Promise<IUserProfile> {
-    const { data, error } = await supabase
-      .from("user_profiles")
-      .insert({
-        user_id: userId,
-        username: null,
-        bio: null,
-        avatar_src: null,
-      })
-      .select("*")
-      .single();
-
-    if (error || !data) {
-      throw new Error("Failed to create user profile");
-    }
-    return data;
-  }
-
-  async updateProfile(
+  /** Creates or updates in one statement, so concurrent first writes cannot collide. */
+  async saveProfile(
     userId: string,
     updates: Partial<Omit<IUserProfile, "user_id">>,
-  ): Promise<IUserProfile> {
-    const { data, error } = await supabase
+  ): Promise<void> {
+    const { error } = await supabase
       .from("user_profiles")
-      .update(updates)
-      .eq("user_id", userId)
-      .select("*")
-      .single();
+      .upsert({ user_id: userId, ...updates }, { onConflict: "user_id" });
 
-    if (error || !data) {
-      throw new Error("Failed to update profile");
-    }
-    return data;
+    if (error) throw error;
   }
 
   async getUserStats(
@@ -58,11 +33,9 @@ class ProfileRModel {
       .from("user_stats")
       .select("level, repaints")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      return null;
-    }
+    if (error) throw error;
     return data;
   }
 
@@ -71,26 +44,11 @@ class ProfileRModel {
       .from("users")
       .select("id, created_at")
       .eq("id", userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      return null;
-    }
+    // 22P02: the id in the URL is not a valid UUID, so no such user exists.
+    if (error && error.code !== "22P02") throw error;
     return data;
-  }
-
-  async getUserCreatedAt(userId: string): Promise<string> {
-    const { data, error } = await supabase
-      .from("users")
-      .select("created_at")
-      .eq("id", userId)
-      .single();
-
-    if (error || !data) {
-      console.error("Error getting user created_at:", error);
-      return new Date().toISOString();
-    }
-    return data.created_at;
   }
 }
 

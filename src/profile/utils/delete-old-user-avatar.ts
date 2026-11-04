@@ -1,4 +1,4 @@
-import { v2 as cloudinary } from "cloudinary";
+import { cloudinary } from "../../shared/configs/cloudinary.js";
 
 const deleteOldAvatarIfNeeded = async (
   oldAvatar: string,
