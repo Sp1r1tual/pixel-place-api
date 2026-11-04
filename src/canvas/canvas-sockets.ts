@@ -1,218 +1,118 @@
 import { Server as IOServer, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 
-import { IPixel } from "../types/canvas.js";
-
-import { socketErrorMiddleware } from "./middlewares/socket-error-middleware.js";
+import { IEnergyState, IPixel } from "../types/canvas.js";
 
 import { AuthService } from "../auth/services/auth-service.js";
 import { CanvasService } from "./services/canvas-service.js";
 
 import { ApiError } from "../shared/exceptions/api-error.js";
+import { parsePixelBatch } from "./utils/parse-pixel-batch.js";
 
 const canvasService = new CanvasService();
 const authService = new AuthService();
 
-interface CanvasSocket extends Socket {
+const GENERIC_ERROR = "errors.something-went-wrong";
+const MAX_INCOMING_MESSAGE_BYTES = 64 * 1024;
+
+type CanvasSocket = Socket & {
   user?: { id: string; email: string };
-}
+};
 
-const CANVAS_WIDTH = 1000;
-const CANVAS_HEIGHT = 1000;
-const canvasState: Record<string, IPixel> = {};
+type SendBatchAck = (err?: string, energy?: number, maxEnergy?: number) => void;
 
-const initCanvasSocket = (server: HttpServer) => {
+const canvasState = new Map<string, IPixel>();
+
+const emitEnergy = (socket: Socket, state: IEnergyState) => {
+  socket.emit(
+    "energyUpdate",
+    state.energy,
+    state.maxEnergy,
+    state.recoverySpeed,
+    state.updatedAt,
+  );
+};
+
+const toClientError = (err: unknown): string => {
+  if (err instanceof ApiError) return err.message;
+
+  console.error("[socket]", err);
+  return GENERIC_ERROR;
+};
+
+const initCanvasSocket = async (server: HttpServer) => {
+  const pixelsFromDb = await canvasService.getAllPixels();
+
+  for (const pixel of pixelsFromDb) {
+    canvasState.set(`${pixel.x}:${pixel.y}`, pixel);
+  }
+
+  console.log(`[Canvas] Loaded ${pixelsFromDb.length} pixels from database`);
+
   const io = new IOServer(server, {
     cors: {
       origin: process.env.CLIENT_URL,
       credentials: true,
     },
     path: "/canvas/socket.io",
+    maxHttpBufferSize: MAX_INCOMING_MESSAGE_BYTES,
   });
 
-  const initializeCanvas = async () => {
+  io.use((socket: CanvasSocket, next) => {
     try {
-      const pixelsFromDb = await canvasService.getAllPixels();
-
-      Object.keys(canvasState).forEach((key) => delete canvasState[key]);
-
-      pixelsFromDb.forEach((p) => {
-        canvasState[`${p.x}:${p.y}`] = {
-          x: p.x,
-          y: p.y,
-          color: p.color,
-          userId: p.userId,
-          placedAt: p.placedAt,
-        };
-      });
-
-      console.log(
-        `[Canvas] Loaded ${pixelsFromDb.length} pixels from database`,
-      );
-    } catch (error) {
-      console.error("[Canvas] Failed to load initial state:", error);
-    }
-  };
-
-  initializeCanvas();
-
-  io.use(async (socket: CanvasSocket, next) => {
-    try {
-      const authHeader = socket.handshake.auth?.authorization;
-      if (!authHeader) {
-        return next(new Error("Unauthorized: No authorization header"));
-      }
-
+      const authHeader = String(socket.handshake.auth?.authorization ?? "");
       const token = authHeader.split(" ")[1];
-      if (!token) {
-        return next(new Error("Unauthorized: No token provided"));
-      }
 
-      const userData = await authService.validateAccessToken(token);
-      socket.user = { id: userData.id, email: userData.email };
+      if (!token) return next(new Error("Unauthorized"));
+
+      const { id, email } = authService.validateAccessToken(token);
+      socket.user = { id, email };
 
       next();
-    } catch (err) {
-      console.error("Socket auth middleware error:", err);
-
-      if (err instanceof ApiError) {
-        return next(new Error(err.message));
-      }
-
+    } catch {
       next(new Error("Unauthorized"));
     }
   });
 
-  io.on("connection", async (socket: CanvasSocket) => {
-    console.log("User connected:", socket.user?.email || socket.id);
+  io.on("connection", (socket: CanvasSocket) => {
+    const userId = socket.user!.id;
 
-    const energyResult = socket.user
-      ? await canvasService.getEnergy(socket.user.id)
-      : null;
+    // Handlers are attached before any await: socket.io drops events that arrive
+    // while no listener exists.
+    socket.on("sendBatch", async (input: unknown, callback?: SendBatchAck) => {
+      const ack: SendBatchAck =
+        typeof callback === "function" ? callback : () => undefined;
 
-    socket.emit("canvasState", Object.values(canvasState));
-
-    if (energyResult) {
-      socket.emit(
-        "energyUpdate",
-        energyResult.energy,
-        energyResult.maxEnergy,
-        energyResult.recoverySpeed,
-        energyResult.updatedAt,
-      );
-    }
-
-    socket.on("token_refresh", async (newToken: string) => {
       try {
-        const userData = await authService.validateAccessToken(newToken);
-        socket.user = { id: userData.id, email: userData.email };
+        const pixels = parsePixelBatch(input);
+        const result = await canvasService.placePixels(userId, pixels);
 
-        console.log(`[socket] Token refreshed for ${socket.user.email}`);
+        const placed: IPixel[] = pixels.map((pixel) => ({
+          ...pixel,
+          userId,
+          placedAt: result.placedAt,
+        }));
 
-        socket.emit("token_refreshed");
+        for (const pixel of placed) {
+          canvasState.set(`${pixel.x}:${pixel.y}`, pixel);
+        }
+
+        io.emit("updatePixels", placed);
+        emitEnergy(socket, result);
+        ack(undefined, result.energy, result.maxEnergy);
       } catch (err) {
-        console.error("[socket] Invalid refreshed token:", err);
-        socket.emit("server_error", {
-          message: "Invalid token after refresh",
-        });
-        socket.disconnect(true);
+        ack(toClientError(err));
       }
     });
 
-    socket.on(
-      "getEnergy",
-      socketErrorMiddleware(async (_, callback) => {
-        if (!socket.user) throw new Error("Unauthorized");
+    socket.emit("canvasState", [...canvasState.values()]);
 
-        const result = await canvasService.getEnergy(socket.user.id);
-        callback(
-          result.energy,
-          result.maxEnergy,
-          result.recoverySpeed,
-          result.updatedAt,
-        );
-      }),
-    );
-
-    socket.on(
-      "sendBatch",
-      socketErrorMiddleware<[IPixel[] | undefined]>(
-        async (
-          pixels?: IPixel[],
-          callback?: (
-            err?: string,
-            energyLeft?: number,
-            maxEnergy?: number,
-            recoverySpeed?: number,
-            updatedAt?: string,
-          ) => void,
-        ) => {
-          if (!socket.user) throw new Error("Unauthorized");
-
-          if (!pixels || !Array.isArray(pixels) || pixels.length === 0) {
-            throw new Error("No pixels sent");
-          }
-
-          for (const p of pixels) {
-            if (
-              p.x < 0 ||
-              p.x >= CANVAS_WIDTH ||
-              p.y < 0 ||
-              p.y >= CANVAS_HEIGHT
-            ) {
-              throw new Error(`Pixel out of bounds: x=${p.x}, y=${p.y}`);
-            }
-          }
-
-          try {
-            const energyResult = await canvasService.placePixelsBatch(
-              socket.user.id,
-              pixels,
-            );
-
-            const placedAt = new Date().toISOString();
-
-            const pixelsWithUserId: IPixel[] = pixels.map((pixel) => ({
-              x: pixel.x,
-              y: pixel.y,
-              color: pixel.color,
-              userId: socket.user!.id,
-              placedAt: placedAt,
-            }));
-
-            pixelsWithUserId.forEach((pixel) => {
-              canvasState[`${pixel.x}:${pixel.y}`] = pixel;
-            });
-
-            io.emit("updatePixels", pixelsWithUserId);
-
-            socket.emit(
-              "energyUpdate",
-              energyResult.energy,
-              energyResult.maxEnergy,
-            );
-
-            callback?.(undefined, energyResult.energy, energyResult.maxEnergy);
-          } catch (err: unknown) {
-            console.error("[sendBatch] Error:", err);
-
-            if (err instanceof ApiError) {
-              callback?.(err.message);
-              socket.emit("server_error", { message: err.message });
-            } else {
-              callback?.("errors.something-went-wrong");
-              socket.emit("server_error", {
-                message: "errors.something-went-wrong",
-              });
-            }
-          }
-        },
-      ),
-    );
-
-    socket.on("disconnect", () => {
-      console.log("Disconnected:", socket.user?.email || socket.id);
-    });
+    canvasService
+      .getEnergy(userId)
+      .then((state) => emitEnergy(socket, state))
+      .catch((err) =>
+        socket.emit("server_error", { message: toClientError(err) }),
+      );
   });
 
   return io;

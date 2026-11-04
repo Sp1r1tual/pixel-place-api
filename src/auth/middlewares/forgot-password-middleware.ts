@@ -9,7 +9,7 @@ const validateForgotPassword = (
   res: Response,
   next: NextFunction,
 ) => {
-  const { email } = req.body;
+  const { email } = req.body ?? {};
 
   if (!email || !validateEmail(email)) {
     throw ApiError.BadRequest(AUTH_ERRORS.invalidEmail);

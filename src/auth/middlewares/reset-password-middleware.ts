@@ -9,7 +9,7 @@ const validateResetPassword = (
   res: Response,
   next: NextFunction,
 ) => {
-  const { password } = req.body;
+  const { password } = req.body ?? {};
 
   if (!password || !validatePassword(password)) {
     throw ApiError.BadRequest(AUTH_ERRORS.invalidPassword);

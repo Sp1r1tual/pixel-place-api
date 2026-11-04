@@ -2,19 +2,18 @@ import { Request, Response, NextFunction } from "express";
 
 import { IAuthRequest } from "../../types/index.js";
 
-import { ShopService } from "../services/shop-service.js";
+import { ShopService, isItemType } from "../services/shop-service.js";
+
+import { ApiError } from "../../shared/exceptions/api-error.js";
 
 const shopService = new ShopService();
 
 class ShopController {
   getShop = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const authReq = req as IAuthRequest;
-      const userId = authReq.user?.id;
+      const { id } = (req as IAuthRequest).user;
 
-      const shopItems = await shopService.getShopItems(userId);
-
-      return res.json(shopItems);
+      return res.json(await shopService.getShopItems(id));
     } catch (error) {
       next(error);
     }
@@ -22,22 +21,16 @@ class ShopController {
 
   upgradeItem = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const authReq = req as IAuthRequest;
-      const userId = authReq.user?.id;
+      const { id } = (req as IAuthRequest).user;
+      const { statId } = req.body ?? {};
 
-      const { statId } = req.body as { statId: string };
+      if (!isItemType(statId)) {
+        throw ApiError.BadRequest("shop.shop-item-not-found");
+      }
 
-      const result = await shopService.upgradeItem(
-        userId,
-        statId as "energy_limit" | "recovery_speed" | "pixel_reward",
-      );
+      const result = await shopService.upgradeItem(id, statId);
 
-      return res.json({
-        success: true,
-        updatedStat: result.updatedStat,
-        currency: result.currency,
-        recoverySpeed: result.recoverySpeed,
-      });
+      return res.json({ success: true, ...result });
     } catch (error) {
       next(error);
     }

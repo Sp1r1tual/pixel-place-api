@@ -1,86 +1,46 @@
 import axios from "axios";
 
+const MAX_ATTEMPTS = 2;
+const REQUEST_TIMEOUT_MS = 10000;
+
 class EmailService {
-  private getMailServiceUrl(): string {
-    const url = process.env.MAIL_SERVICE_URL;
+  private async post(path: string, email: string, link: string): Promise<void> {
+    let lastMessage = "";
 
-    if (!url)
-      throw new Error(
-        "MAIL_SERVICE_URL is not defined in environment variables",
-      );
-    return url;
-  }
-
-  public async sendActivationMail(
-    email: string,
-    link: string,
-    retries: number = 2,
-  ): Promise<void> {
-    const mailServiceUrl = this.getMailServiceUrl();
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= retries; attempt++) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         await axios.post(
-          `${mailServiceUrl}/activation`,
+          `${process.env.MAIL_SERVICE_URL}${path}`,
           { email, link },
-          { timeout: 10000 },
+          {
+            timeout: REQUEST_TIMEOUT_MS,
+            headers: { "x-mail-secret": process.env.MAIL_API_SECRET },
+          },
         );
 
         return;
       } catch (error) {
-        lastError = error as Error;
+        // Only the message: the full axios error contains the secret header.
+        lastMessage = error instanceof Error ? error.message : String(error);
         console.error(
-          `Failed to send activation email (attempt ${attempt}/${retries}):`,
-          error,
+          `Mail request ${path} failed (attempt ${attempt}/${MAX_ATTEMPTS}): ${lastMessage}`,
         );
 
-        if (attempt < retries) {
-          const delay = attempt * 1000;
-          await new Promise((resolve) => setTimeout(resolve, delay));
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
         }
       }
     }
 
-    throw new Error(
-      `Failed to send activation email after ${retries} attempts: ${lastError?.message}`,
-    );
+    throw new Error(`Mail request ${path} failed: ${lastMessage}`);
   }
 
-  public async sendResetPasswordMail(
-    email: string,
-    link: string,
-    retries: number = 2,
-  ): Promise<void> {
-    const mailServiceUrl = this.getMailServiceUrl();
-    let lastError: Error | null = null;
+  public sendActivationMail(email: string, link: string): Promise<void> {
+    return this.post("/activation", email, link);
+  }
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        await axios.post(
-          `${mailServiceUrl}/reset`,
-          { email, link },
-          { timeout: 10000 },
-        );
-
-        return;
-      } catch (error) {
-        lastError = error as Error;
-        console.error(
-          `Failed to send reset email (attempt ${attempt}/${retries}):`,
-          error,
-        );
-
-        if (attempt < retries) {
-          const delay = attempt * 1000;
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
-    }
-
-    throw new Error(
-      `Failed to send reset password email after ${retries} attempts: ${lastError?.message}`,
-    );
+  public sendResetPasswordMail(email: string, link: string): Promise<void> {
+    return this.post("/reset", email, link);
   }
 }
 

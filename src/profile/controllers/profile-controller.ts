@@ -13,12 +13,9 @@ class ProfileController {
     next: NextFunction,
   ) => {
     try {
-      const authReq = req as IAuthRequest;
-      const userId = authReq.user?.id;
+      const { id } = (req as IAuthRequest).user;
 
-      const profile = await profileService.getCurrentProfile(userId);
-
-      return res.json(profile);
+      return res.json(await profileService.getCurrentProfile(id));
     } catch (error) {
       next(error);
     }
@@ -30,9 +27,9 @@ class ProfileController {
     next: NextFunction,
   ) => {
     try {
-      const { userId } = req.params;
-
-      const profile = await profileService.getPublicProfile(userId);
+      const profile = await profileService.getPublicProfile(
+        req.params.userId as string,
+      );
 
       return res.json(profile);
     } catch (error) {
@@ -42,19 +39,17 @@ class ProfileController {
 
   updateProfile = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const authReq = req as IAuthRequest;
-      const userId = authReq.user?.id;
+      const { id } = (req as IAuthRequest).user;
+      const { username, bio } = req.body ?? {};
 
-      const { username, bio } = req.body;
-      const file = req.file;
+      // Validated first so that a rejected request uploads nothing.
+      profileService.validateProfileText({ username, bio });
 
-      let avatarSrc: string | undefined;
+      const avatarSrc = req.file
+        ? await uploadAvatarToCloudinary(req.file.buffer, id)
+        : undefined;
 
-      if (file) {
-        avatarSrc = await uploadAvatarToCloudinary(file.buffer, userId);
-      }
-
-      const updatedProfile = await profileService.updateProfile(userId, {
+      const updatedProfile = await profileService.updateProfile(id, {
         username,
         bio,
         avatarSrc,

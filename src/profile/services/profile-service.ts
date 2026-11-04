@@ -9,103 +9,81 @@ import { ApiError } from "../../shared/exceptions/api-error.js";
 import { formatDate } from "../../shared/utils/format-date.js";
 import { deleteOldAvatarIfNeeded } from "../utils/delete-old-user-avatar.js";
 
+const MAX_USERNAME_LENGTH = 21;
+const MAX_BIO_LENGTH = 500;
+
 class ProfileService {
-  private readonly profileRModel: ProfileRModel;
+  private readonly profileRModel = new ProfileRModel();
 
-  constructor() {
-    this.profileRModel = new ProfileRModel();
-  }
-
-  private async ensureUserProfile(userId: string) {
-    const profile = await this.profileRModel.findProfileByUserId(userId);
-
-    if (!profile) {
-      try {
-        return await this.profileRModel.createProfile(userId);
-      } catch (error) {
-        console.error("Error creating user_profile:", error);
-        throw ApiError.BadRequest("Failed to create user profile");
-      }
-    }
-    return profile;
-  }
-
-  public async getCurrentProfile(userId: string): Promise<IProfileData> {
-    if (!userId) {
-      throw ApiError.UnauthorizedError();
-    }
-
-    const [profile, stats, createdAt] = await Promise.all([
-      this.ensureUserProfile(userId),
-      this.profileRModel.getUserStats(userId),
-      this.profileRModel.getUserCreatedAt(userId),
-    ]);
-
-    return {
-      userId: userId,
-      username: profile.username || undefined,
-      bio: profile.bio || undefined,
-      avatarSrc: profile.avatar_src || undefined,
-      level: stats?.level || 1,
-      repaints: stats?.repaints || 0,
-      joined: formatDate(createdAt),
-    };
-  }
-
-  public async getPublicProfile(userId: string): Promise<IProfileData> {
-    if (!userId) {
-      throw ApiError.BadRequest("User ID is required");
-    }
-
+  /** A user who never saved a profile simply has empty fields. */
+  private async getProfile(userId: string): Promise<IProfileData> {
     const user = await this.profileRModel.findUserById(userId);
 
-    if (!user) {
-      throw ApiError.NotFound("User not found");
-    }
+    if (!user) throw ApiError.NotFound("profile.not-found");
 
     const [profile, stats] = await Promise.all([
-      this.ensureUserProfile(userId),
+      this.profileRModel.findProfileByUserId(userId),
       this.profileRModel.getUserStats(userId),
     ]);
 
     return {
-      userId: userId,
-      username: profile.username || undefined,
-      bio: profile.bio || undefined,
-      avatarSrc: profile.avatar_src || undefined,
+      userId,
+      username: profile?.username || undefined,
+      bio: profile?.bio || undefined,
+      avatarSrc: profile?.avatar_src || undefined,
       level: stats?.level || 1,
       repaints: stats?.repaints || 0,
       joined: formatDate(user.created_at),
     };
   }
 
+  public getCurrentProfile(userId: string): Promise<IProfileData> {
+    return this.getProfile(userId);
+  }
+
+  public getPublicProfile(userId: string): Promise<IProfileData> {
+    return this.getProfile(userId);
+  }
+
+  public validateProfileText({ username, bio }: IUpdateProfilePayload): void {
+    if (
+      username !== undefined &&
+      (typeof username !== "string" || username.length > MAX_USERNAME_LENGTH)
+    ) {
+      throw ApiError.BadRequest("profile.username-too-long");
+    }
+
+    if (
+      bio !== undefined &&
+      (typeof bio !== "string" || bio.length > MAX_BIO_LENGTH)
+    ) {
+      throw ApiError.BadRequest("profile.bio-too-long");
+    }
+  }
+
   public async updateProfile(
     userId: string,
     updates: IUpdateProfilePayload,
   ): Promise<IProfileData> {
-    if (!userId) throw ApiError.UnauthorizedError();
+    const current = await this.profileRModel.findProfileByUserId(userId);
 
-    const current = await this.ensureUserProfile(userId);
+    await this.profileRModel.saveProfile(userId, {
+      ...(updates.username !== undefined && { username: updates.username }),
+      ...(updates.bio !== undefined && { bio: updates.bio }),
+      ...(updates.avatarSrc !== undefined && {
+        avatar_src: updates.avatarSrc,
+      }),
+    });
 
-    if (updates.avatarSrc && current.avatar_src) {
-      await deleteOldAvatarIfNeeded(current.avatar_src, updates.avatarSrc);
+    // Only after the save: a failed update must not cost the user their avatar.
+    if (updates.avatarSrc && current?.avatar_src) {
+      await deleteOldAvatarIfNeeded(
+        current.avatar_src,
+        updates.avatarSrc,
+      ).catch((error) => console.error("Failed to delete old avatar:", error));
     }
 
-    const updateData: Record<string, string | null> = {};
-
-    if (updates.username !== undefined) updateData.username = updates.username;
-    if (updates.bio !== undefined) updateData.bio = updates.bio;
-    if (updates.avatarSrc !== undefined)
-      updateData.avatar_src = updates.avatarSrc;
-
-    try {
-      await this.profileRModel.updateProfile(userId, updateData);
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      throw ApiError.BadRequest("Failed to update profile");
-    }
-
-    return this.getCurrentProfile(userId);
+    return this.getProfile(userId);
   }
 }
 

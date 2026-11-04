@@ -9,7 +9,7 @@ import {
 } from "../utils/validations/authValidators.js";
 
 const authValidation = (req: Request, res: Response, next: NextFunction) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body ?? {};
 
   if (!email || !validateEmail(email)) {
     throw ApiError.BadRequest(AUTH_ERRORS.invalidEmail);

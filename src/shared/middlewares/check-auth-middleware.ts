@@ -5,30 +5,21 @@ import { IAuthRequest } from "../../types/index.js";
 import { AuthService } from "../../auth/services/auth-service.js";
 import { ApiError } from "../exceptions/api-error.js";
 
-const checkAuthMiddleware = async (
+const authService = new AuthService();
+
+const checkAuthMiddleware = (
   req: Request,
   res: Response,
   next: NextFunction,
 ) => {
-  const authService = new AuthService();
-
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
-      return next(ApiError.UnauthorizedError());
-    }
-
-    const token = authHeader.split(" ")[1];
+    const token = req.headers.authorization?.split(" ")[1];
 
     if (!token) {
       return next(ApiError.UnauthorizedError());
     }
 
-    const userData = await authService.validateAccessToken(token);
-
-    const authReq = req as IAuthRequest;
-    authReq.user = userData;
+    (req as IAuthRequest).user = authService.validateAccessToken(token);
 
     next();
   } catch (err) {

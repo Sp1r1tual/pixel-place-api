@@ -36,6 +36,9 @@ export interface IShopItemRecord {
 export type ItemType = "energy_limit" | "recovery_speed" | "pixel_reward";
 
 export type StatLevelKey =
-  | "energy_limit_level"
-  | "recovery_speed_level"
-  | "pixel_reward_level";
+  "energy_limit_level" | "recovery_speed_level" | "pixel_reward_level";
+
+export interface IUpgradeResult {
+  level: number;
+  currency: number;
+}
